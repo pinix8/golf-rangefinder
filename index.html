@@ -624,7 +624,7 @@ function searchParDb(q) {
   const k = normName(q);
   if (!k) return [];
   return PAR_DB.map((c, i) => ({ c, i })).filter(({ c }) =>
-    [c.name, ...(c.aliases || [])].some(n => { const v = normName(n); return v.includes(k) || (v && k.includes(v)); }));
+    [c.name, ...(c.aliases || [])].some(n => { const v = normName(n); return v.includes(k) || (v.length >= 3 && k.startsWith(v)); }));
 }
 async function osmRunSearch() {
   const q = document.getElementById('osmQ').value.trim();
