@@ -33,7 +33,7 @@
 
   header { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 6px) 10px 6px;
     background: var(--panel); border-bottom: 1px solid var(--line); }
-  header .hole { flex: 1; min-width: 0; text-align: center; }
+  header .hole { flex: 1; min-width: 0; text-align: center; cursor: pointer; }
   header .hole b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   header .hole b { font-size: 20px; }
   header .hole small { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -257,7 +257,7 @@ function render() {
     $('strokes').textContent = 0; $('putts').textContent = 0; $('shotList').textContent = '';
     return;
   }
-  $('holeTitle').innerHTML = `<b>${holeIdx() + 1}번홀 · Par ${h.par}</b><small>${esc(c.name)}</small>`;
+  $('holeTitle').innerHTML = `<b>${holeIdx() + 1}번홀 · Par ${h.par} <span style="font-size:13px;opacity:.6">✎</span></b><small>${esc(c.name)}</small>`;
   const g = h.green || {};
   const pin = pinPoint();
   $('dF').textContent = me && g.f ? fmt(haversine(me, g.f)) : '—';
@@ -323,6 +323,8 @@ function fitHole() {
   if (h && h.tee) pts.push(h.tee);
   const shots = holeRec() ? holeRec().shots : [];
   if (shots.length) pts.push(shots[0].p);
+  const ctr = course() && course().center;
+  if (!pts.length && ctr && (!me || haversine(me, ctr) > 3000)) { map.setView(ctr, 16); return; }
   if (me && (!pts.length || haversine(me, pts[0]) < 800)) pts.push(me);
   if (pts.length > 1) map.fitBounds(pts, { padding: [40, 40], maxZoom: 19 });
   else if (pts.length) map.setView(pts[0], 18);
@@ -495,6 +497,13 @@ box.addEventListener('click', e => {
   else if (a === 'osmCreate') osmCreate();
   else if (a === 'dbPick') dbPick(+id);
   else if (a === 'dbCreate') dbCreate();
+  else if (a === 'dbReset') { if (confirm('직접 수정한 파를 지우고 원래 값으로 되돌릴까요? (이미 만든 코스는 그대로)')) { delete store.dbFix[PAR_DB[+id].name]; save(); dbPick(+id); } }
+  else if (a === 'ncCreate') ncCreate();
+  else if (a === 'locGo') locSearch(id);
+  else if (a === 'locPick') { const r = locState.results[+t.dataset.k]; if (r) setCourseCenter(id, [+r.lat, +r.lon]); }
+  else if (a === 'loc') locSheet(id, store.courses[id].name);
+  else if (a === 'holePar') { setPar(round().courseId, holeIdx(), +id); save(); render(); holeSheet(); toast(`${holeIdx() + 1}번홀 Par ${id}로 저장`); }
+  else if (a === 'holeClear') { if (confirm('이 홀의 그린·티 위치를 지울까요?')) { holeDef().green = null; holeDef().tee = null; save(); render(); holeSheet(); } }
   else if (a === 'osmManual') { closeSheet(); newCourse(osmState.picked ? osmState.picked.name : ''); }
   else if (a === 'parApply') applyQuickPar(id);
   else if (a === 'play') startRound(id);
@@ -506,7 +515,7 @@ box.addEventListener('click', e => {
 });
 box.addEventListener('change', e => {
   const t = e.target;
-  if (t.dataset.par) { store.courses[t.dataset.cid].holes[+t.dataset.par].par = +t.value; save(); render(); }
+  if (t.dataset.par) { setPar(t.dataset.cid, +t.dataset.par, +t.value); save(); render(); }
   if (t.id === 'cname') { store.courses[t.dataset.cid].name = t.value.trim() || '이름없음'; save(); render(); }
   if (t.id === 'importFile' && t.files[0]) importData(t.files[0]);
 });
@@ -559,14 +568,36 @@ async function osmRunSearch() {
     : `<p>「${esc(q)}」 골프장을 찾지 못했습니다. 이름을 짧게 (예: 「레이크사이드」) 다시 검색하거나 직접 만드세요.</p>`)
     + '<div class="list"><button data-act="newCourse">＋ 새 코스 직접 만들기</button></div>';
 }
+// 내장 데이터 코스의 파를 고치면 store.dbFix에 기억 → 같은 골프장으로 코스를 다시 만들 때도 수정값 사용
+function dbPars(c, n) {
+  const fix = store.dbFix && store.dbFix[c.name] && store.dbFix[c.name][n.label];
+  return fix && fix.length === 9 ? fix : n.pars;
+}
+function setPar(cid, i, p) {
+  const c = store.courses[cid];
+  c.holes[i].par = p;
+  if (!c.src || !c.src.startsWith('db:') || !c.nines) return;
+  const name = c.src.slice(3), half = i < 9 ? 0 : 1, label = c.nines[half];
+  const base = PAR_DB.find(x => x.name === name);
+  const orig = base && base.nines.find(n => n.label === label);
+  const pars = c.holes.slice(half * 9, half * 9 + 9).map(h => h.par);
+  store.dbFix = store.dbFix || {};
+  store.dbFix[name] = store.dbFix[name] || {};
+  if (orig && pars.join() === orig.pars.join()) delete store.dbFix[name][label];
+  else store.dbFix[name][label] = pars;
+  if (!Object.keys(store.dbFix[name]).length) delete store.dbFix[name];
+}
 function dbPick(i) {
   const c = PAR_DB[i]; if (!c) return;
   osmState.dbPicked = c;
   const opt = sel => c.nines.map((n, k) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(n.label)}</option>`).join('');
   const sum = p => p.reduce((s, v) => s + v, 0);
+  const fixed = !!(store.dbFix && store.dbFix[c.name]);
   openSheet(`<h3>${esc(c.name)}</h3>
     <table class="card"><tr><th>코스</th><th>홀별 파</th><th>합</th></tr>
-    ${c.nines.map(n => `<tr><td>${esc(n.label)}</td><td>${n.pars.join(' ')}</td><td>${sum(n.pars)}</td></tr>`).join('')}</table>
+    ${c.nines.map(n => { const p = dbPars(c, n), mine = p !== n.pars;
+      return `<tr><td>${esc(n.label)}${mine ? ' ✏️' : ''}</td><td>${p.join(' ')}</td><td>${sum(p)}</td></tr>`; }).join('')}</table>
+    ${fixed ? `<p class="muted">✏️ 표시는 직접 수정한 값입니다. <button data-act="dbReset" data-id="${i}" style="padding:4px 8px">원래 값으로 되돌리기</button></p>` : ''}
     ${c.verified ? '' : `<p style="color:var(--warn)">⚠️ 확인 필요: ${esc(c.notes || '출처 간 대조가 끝나지 않았습니다')} — 현장 스코어카드와 비교하세요.</p>`}
     <div class="row"><span style="flex:0 0 auto">전반</span><select id="dbFront">${opt(0)}</select>
       <span style="flex:0 0 auto">후반</span><select id="dbBack">${opt(c.nines.length > 1 ? 1 : 0)}</select></div>
@@ -579,8 +610,8 @@ function dbCreate() {
   const plain = c.nines.length === 2 && f !== b && /\bOUT\b/i.test(f.label) && /\bIN\b/i.test(b.label);
   const name = plain ? c.name : `${c.name} ${f.label}→${b.label}`;
   const id = 'c' + Date.now();
-  store.courses[id] = { name, src: 'db:' + c.name,
-    holes: [...f.pars, ...b.pars].map(p => ({ par: p, green: null, tee: null })) };
+  store.courses[id] = { name, src: 'db:' + c.name, nines: [f.label, b.label],
+    holes: [...dbPars(c, f), ...dbPars(c, b)].map(p => ({ par: p, green: null, tee: null })) };
   save();
   toast(`「${name}」 코스를 만들었습니다`, 2500);
   editCourse(id);
@@ -632,18 +663,95 @@ function applyQuickPar(id) {
   const c = store.courses[id];
   let start = 0;
   if (raw.length === 9) start = confirm('9자리입니다. 전반(1~9번)에 적용할까요?\n취소를 누르면 후반(10~18번)에 적용합니다.') ? 0 : 9;
-  [...raw].forEach((d, i) => { c.holes[start + i].par = +d; });
+  [...raw].forEach((d, i) => setPar(id, start + i, +d));
   save(); render(); editCourse(id);
   toast(`파 적용 완료 (총 Par ${c.holes.reduce((s, h) => s + h.par, 0)})`);
 }
 
+// ---------- 직접 만들기 (해외 등 검색이 어려운 골프장) ----------
 function newCourse(preset) {
-  const name = prompt('코스 이름 (예: 레이크사이드 서코스)', preset || '');
-  if (!name) return;
-  const id = 'c' + Date.now();
-  store.courses[id] = { name: name.trim(), holes: Array.from({ length: 18 }, () => ({ par: 4, green: null, tee: null })) };
-  save(); editCourse(id);
+  openSheet(`<h3>＋ 골프장 직접 만들기</h3>
+    <p class="muted">해외 골프장처럼 검색되지 않는 곳도 직접 만들어 쓸 수 있습니다.</p>
+    <div class="row"><input type="text" id="ncName" placeholder="골프장·코스 이름 (예: 세부 알타비스타)" value="${esc(preset || '')}"></div>
+    <p><b>파</b> <span class="muted">스코어카드 숫자 18자리 (비워두면 모두 Par 4, 나중에 수정 가능)</span></p>
+    <div class="row"><input type="text" id="ncPar" inputmode="numeric" autocomplete="off" placeholder="예: 443545344 453434354"></div>
+    <div class="list"><button data-act="ncCreate" class="primary">만들기 → 위치 찾기</button><button data-act="courses">← 코스 목록</button></div>`);
+  setTimeout(() => document.getElementById('ncName').focus(), 50);
 }
+function ncCreate() {
+  const name = document.getElementById('ncName').value.trim();
+  if (!name) { toast('이름을 입력하세요'); return; }
+  const raw = document.getElementById('ncPar').value.replace(/[^0-9]/g, '');
+  if (raw && (!/^[3-6]{18}$/.test(raw) && !/^[3-6]{9}$/.test(raw))) { toast('파는 3~6 숫자 9자리 또는 18자리로 입력하세요', 2500); return; }
+  const pars = raw.length === 9 ? raw + raw : raw;
+  const id = 'c' + Date.now();
+  store.courses[id] = { name, src: 'manual',
+    holes: Array.from({ length: 18 }, (_, i) => ({ par: pars ? +pars[i] : 4, green: null, tee: null })) };
+  save();
+  locSheet(id, name);
+}
+
+// 골프장 위치 찾기 — 그린 등록 전에 지도를 그 골프장으로 이동 (OSM Nominatim, 좌표 직접 입력도 가능)
+function locSheet(id, q) {
+  const c = store.courses[id];
+  openSheet(`<h3>🌏 「${esc(c.name)}」 위치</h3>
+    <p class="muted">골프장 이름·도시로 검색하거나, 구글지도 좌표(예: 10.3157, 123.8854)를 붙여넣으세요. 위치를 정해두면 현지에 가기 전에도 위성지도에서 그린을 미리 등록할 수 있습니다.</p>
+    <div class="row"><input type="text" id="locQ" value="${esc(q || '')}" placeholder="예: Alta Vista Golf Cebu" enterkeyhint="search">
+      <button data-act="locGo" data-id="${id}" class="primary" style="flex:0 0 auto">찾기</button></div>
+    <div id="locOut">${c.center ? '<p class="muted">✅ 위치가 설정되어 있습니다.</p>' : ''}</div>
+    <div class="list"><button data-act="edit" data-id="${id}">${c.center ? '완료 → 코스 편집' : '나중에 (현장 GPS 사용)'}</button></div>`);
+  document.getElementById('locQ').addEventListener('keydown', e => { if (e.key === 'Enter') locSearch(id); });
+}
+const locState = { results: [] };
+async function locSearch(id) {
+  const q = document.getElementById('locQ').value.trim(), out = document.getElementById('locOut');
+  if (!q) return;
+  const m = q.match(/(-?\d{1,2}\.\d+)\s*[, ]\s*(-?\d{1,3}\.\d+)/);
+  if (m) { setCourseCenter(id, [+m[1], +m[2]]); return; }
+  out.innerHTML = '<p>검색 중…</p>';
+  locState.results = null;
+  try {
+    const res = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&accept-language=ko,en&q=' + encodeURIComponent(q));
+    if (res.ok) locState.results = await res.json();
+  } catch (e) { /* Nominatim 캐시 응답에 CORS 헤더가 빠지는 경우 → Photon으로 재시도 */ }
+  if (!locState.results || !locState.results.length) {
+    try {
+      const res = await fetch('https://photon.komoot.io/api/?limit=8&q=' + encodeURIComponent(q));
+      if (res.ok) {
+        const fc = await res.json();
+        locState.results = fc.features.map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
+          display_name: [f.properties.name, f.properties.city, f.properties.state, f.properties.country].filter(Boolean).join(', ') }));
+      }
+    } catch (e) { /* 둘 다 실패 → 좌표 직접 입력 안내 */ }
+  }
+  if (!document.getElementById('locOut')) return;
+  out.innerHTML = locState.results === null ? '<p>검색 서버가 응답하지 않습니다. 좌표를 직접 붙여넣어 보세요.</p>'
+    : locState.results.length ? `<div class="list">${locState.results.map((r, i) =>
+        `<button data-act="locPick" data-id="${id}" data-k="${i}">📍 ${esc(r.display_name)}</button>`).join('')}</div>`
+    : '<p>찾지 못했습니다. 영문 이름이나 도시명으로 다시 검색하거나, 구글지도에서 좌표를 복사해 붙여넣으세요.</p>';
+}
+function setCourseCenter(id, p) {
+  store.courses[id].center = p; save();
+  map.setView(p, 16);
+  toast('위치를 저장했습니다. 라운드 시작 후 지도에서 그린을 탭해 등록하세요', 3000);
+  editCourse(id);
+}
+
+// ---------- 라운드 중 홀 정보 바로 수정 (상단 홀 제목 탭) ----------
+function holeSheet() {
+  const c = course(); if (!c) { openMenu(); return; }
+  const h = holeDef(), n = holeIdx() + 1, cid = round().courseId;
+  openSheet(`<h3>${n}번홀 정보 수정</h3>
+    <p><b>파</b></p>
+    <div class="row">${[3, 4, 5, 6].map(p => `<button data-act="holePar" data-id="${p}" class="${p === h.par ? 'on' : ''}">Par ${p}</button>`).join('')}</div>
+    <div class="list">
+      <button data-act="setup">📍 그린·티 위치 다시 지정 (지도 탭)</button>
+      ${h.green || h.tee ? '<button data-act="holeClear">🗑 이 홀 그린·티 위치 지우기</button>' : ''}
+      <button data-act="edit" data-id="${cid}">✏️ 코스 전체 편집 (18홀 파·이름)</button>
+      <button data-act="close">닫기</button></div>
+    <p class="muted">수정하면 바로 저장되어 다음 라운드에도 적용됩니다.${c.src && c.src.startsWith('db:') ? ' 내장 데이터 골프장은 다음에 같은 골프장으로 코스를 만들 때도 수정값이 쓰입니다.' : ''}</p>`);
+}
+document.getElementById('holeTitle').addEventListener('click', holeSheet);
 function chooseCourse() {
   const ids = Object.keys(store.courses);
   openSheet(`<h3>코스 선택</h3><div class="list">
@@ -681,7 +789,9 @@ function editCourse(id) {
     <p class="muted">홀별 파를 지정하세요 (총 Par ${par}). 그린 위치는 라운드 중 해당 홀에서 ☰ → 「그린·티 위치 설정」으로 지도를 탭해 등록합니다. 한 번 등록하면 다음 라운드부터 재사용됩니다.</p>
     <div class="holegrid">${c.holes.map((h, i) => `<div>${i + 1}번 ${h.green && h.green.c ? '✅' : '⬜'}<br>
       <select data-par="${i}" data-cid="${id}">${[3, 4, 5, 6].map(p => `<option ${p === h.par ? 'selected' : ''}>${p}</option>`).join('')}</select></div>`).join('')}</div>
-    <div class="list"><button data-act="play" data-id="${id}" class="primary">이 코스로 라운드 시작</button><button data-act="courses">← 코스 목록</button></div>`);
+    <div class="list"><button data-act="play" data-id="${id}" class="primary">이 코스로 라운드 시작</button>
+      <button data-act="loc" data-id="${id}">🌏 골프장 위치 ${c.center ? '✅ 설정됨 (변경)' : '찾기 — 해외 등 미리 그린 등록용'}</button>
+      <button data-act="courses">← 코스 목록</button></div>`);
 }
 
 function showCard(rd, c) {

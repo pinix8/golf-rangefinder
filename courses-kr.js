@@ -479,6 +479,51 @@ window.GOLF_PAR_DB = [
   "checked": "2026-11-03"
  },
  {
+  "name": "솔라시도CC",
+  "aliases": [
+   "솔라시도",
+   "솔라시도 컨트리클럽",
+   "Solaseado",
+   "Solaseado Country Club",
+   "Solaseado CC"
+  ],
+  "region": "전남 해남",
+  "nines": [
+   {
+    "label": "솔라",
+    "pars": [
+     4,
+     5,
+     3,
+     4,
+     4,
+     5,
+     3,
+     4,
+     4
+    ]
+   },
+   {
+    "label": "시도",
+    "pars": [
+     5,
+     4,
+     3,
+     4,
+     4,
+     4,
+     3,
+     5,
+     4
+    ]
+   }
+  ],
+  "verified": true,
+  "notes": "공식 홈페이지 코스 페이지의 홀별 공략도 이미지(solacourse/sola{n}_img.png, seadocourse/seado{n}_img.png)에 표기된 'PAR x'를 직접 판독(2026-11-03, 텍스트가 아닌 이미지). 각 코스 레이아웃 이미지의 '36Par' 합계와 일치. 코스명 표기: 솔라(SOLA)·시도(SEADO).",
+  "source": "https://www.solaseadocc.com/mobile/sub/solaCourse.asp",
+  "checked": "2026-11-03"
+ },
+ {
   "name": "솔모로CC",
   "aliases": [
    "솔모로",
@@ -1100,6 +1145,65 @@ window.GOLF_PAR_DB = [
   "verified": true,
   "notes": "공식 홈페이지 코스소개 표(Lake course/Hill course, 홀별 Par) 원문 확인. 각 36, 합 72. 레이크/힐 중 어느 쪽이 OUT인지는 공식표에 명시 없음.",
   "source": "https://www.kingsdale.co.kr/course/intro",
+  "checked": "2026-11-03"
+ },
+ {
+  "name": "파인비치CC",
+  "aliases": [
+   "파인비치",
+   "파인비치 골프링크스",
+   "파인비치골프링크스",
+   "Pine Beach",
+   "Pine Beach Golf Links"
+  ],
+  "region": "전남 해남",
+  "nines": [
+   {
+    "label": "파인",
+    "pars": [
+     4,
+     5,
+     3,
+     4,
+     4,
+     5,
+     4,
+     3,
+     4
+    ]
+   },
+   {
+    "label": "비치",
+    "pars": [
+     4,
+     4,
+     5,
+     3,
+     4,
+     3,
+     4,
+     5,
+     4
+    ]
+   },
+   {
+    "label": "오시아노",
+    "pars": [
+     4,
+     5,
+     3,
+     4,
+     4,
+     3,
+     4,
+     5,
+     4
+    ]
+   }
+  ],
+  "verified": false,
+  "notes": "홀별 파를 요약 도구 경유로 확인(원문 미대조) — 현장 스코어카드와 대조 필요. 공식 홈페이지 홀별 페이지 27개(course/p1~p9, b1~b9, o1~o9.asp)의 'HOLE n Par x / HDCP y' 원문을 직접 확인(2026-11-03). 홀별 COURSE TIP 설명(파3/파4/파5 언급)과도 일치. 각 9홀 합 36. 대중제 27홀(파인·비치·오시아노).",
+  "source": "https://www.pinebeachcc.co.kr/course/p1.asp",
   "checked": "2026-11-03"
  },
  {
