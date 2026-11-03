@@ -65,6 +65,12 @@
   .live { display: flex; gap: 8px; margin-top: 6px; font-size: 13px; color: var(--muted); }
   .live div { flex: 1; background: #0d2016; border-radius: 8px; padding: 4px 8px; }
   .live b { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; }
+  .lastshot { margin-top: 6px; background: #0d2016; border-radius: 8px; padding: 6px 10px; font-size: 15px; display: none; }
+  .lastshot b { color: var(--accent); font-size: 20px; font-variant-numeric: tabular-nums; }
+  .counter.hl { outline: 2px solid var(--accent); animation: pulse 1s ease-in-out 3; }
+  @keyframes pulse { 50% { outline-color: transparent; } }
+  .big.nogreen { cursor: pointer; }
+  .big.nogreen .num { font-size: 22px; padding: 12px 0; color: var(--warn); }
   .shots { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 16px; white-space: nowrap; overflow-x: auto; }
   .actions { display: flex; gap: 6px; margin-top: 6px; }
   .actions button { flex: 1; padding: 11px 4px; font-size: 14px; }
@@ -133,9 +139,10 @@
     <input type="range" id="pinSlider" min="0" max="100" step="5" value="50" aria-label="핀 위치 미세조정">
   </div>
   <div class="live">
-    <div>티부터 <b id="dTee">—</b></div>
-    <div>직전 샷부터 <b id="dLast">—</b></div>
+    <div>홀 전장 (티→핀)<br><b id="dHole">—</b></div>
+    <div>이번 샷 비거리 (직전 지점→나)<br><b id="dLast">—</b></div>
   </div>
+  <div class="lastshot" id="lastShot"></div>
   <div class="shots" id="shotList"></div>
   <div class="actions">
     <button id="teeBtn">⛳ 티샷 위치</button>
@@ -143,8 +150,8 @@
     <button id="undoBtn">↶ 취소</button>
   </div>
   <div class="score">
-    <div class="counter"><span>타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
-    <div class="counter"><span>퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
+    <div class="counter"><span id="strokesLbl">타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
+    <div class="counter" id="puttBox"><span>퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
   </div>
 </div>
 
@@ -213,13 +220,30 @@ let measure = null; // 지도 탭 측정 지점
 // ---------- GPS ----------
 let me = null, meAccM = null, firstFix = true;
 const samples = [];
+// 정확도 가중 평균 (가중치 1/acc²) + 중앙값에서 멀리 튄 값 제거
+function fusePoints(pts) {
+  if (!pts.length) return null;
+  const med = [pts.map(s => s.p[0]).sort((a, b) => a - b)[pts.length >> 1], pts.map(s => s.p[1]).sort((a, b) => a - b)[pts.length >> 1]];
+  const best = Math.min(...pts.map(s => s.acc));
+  const keep = pts.length >= 3 ? pts.filter(s => haversine(s.p, med) <= Math.max(best * 1.5, 3)) : pts;
+  const use = keep.length ? keep : pts;
+  let w = 0, lat = 0, lng = 0;
+  for (const s of use) { const k = 1 / Math.max(s.acc, 1) ** 2; w += k; lat += s.p[0] * k; lng += s.p[1] * k; }
+  // n개 독립 측정 평균 → 오차가 대략 1/√n로 줄어듦 (단, GPS 오차는 시간상 상관이 있어 하한을 둠)
+  const acc = Math.max(best / Math.sqrt(use.length), best * 0.6);
+  return { p: [lat / w, lng / w], acc, n: use.length, best };
+}
 function startGps() {
   if (!('geolocation' in navigator)) { setBadge('GPS 없음', 'bad'); return; }
   navigator.geolocation.watchPosition(pos => {
-    me = [pos.coords.latitude, pos.coords.longitude];
+    const raw = [pos.coords.latitude, pos.coords.longitude];
     meAccM = pos.coords.accuracy;
-    samples.push({ p: me, acc: meAccM, t: Date.now() });
-    while (samples.length && Date.now() - samples[0].t > 8000) samples.shift();
+    if (meAccM <= 60) samples.push({ p: raw, acc: meAccM, t: Date.now() });
+    while (samples.length && Date.now() - samples[0].t > 10000) samples.shift();
+    // 실시간 위치: 최근 4초 측정 중 현재 위치와 일치하는(정지 상태) 것만 평균 → 숫자 흔들림 감소, 걷는 중엔 최신값
+    const recent = samples.filter(s => Date.now() - s.t <= 4000 && haversine(s.p, raw) <= Math.max(meAccM, 3));
+    const f = recent.length >= 2 ? fusePoints(recent) : null;
+    me = f ? f.p : raw;
     setBadge('±' + Math.round(meAccM) + 'm', meAccM <= 6 ? 'good' : meAccM <= 15 ? 'mid' : 'bad');
     meMarker.setLatLng(me).addTo(map);
     meAcc.setLatLng(me).setRadius(meAccM).addTo(map);
@@ -231,19 +255,28 @@ function startGps() {
 }
 function setBadge(t, cls) { const b = document.getElementById('gpsBadge'); b.textContent = t; b.className = 'gps ' + cls; }
 
-// 버튼을 누른 뒤 3초간 수집한 좌표를 정확도 가중 평균 → 샷 위치 오차 감소
+// 샷 위치 확정: 3~8초 측정(측정 5회 이상·정확도 5m 이내면 3초에 종료) → 튄 값 제거 후 가중 평균
+let measuring = false;
 function stablePosition() {
   return new Promise(resolve => {
-    if (!me) { resolve(null); return; }
+    if (!me || measuring) { resolve(null); return; }
+    measuring = true;
     const t0 = Date.now();
-    toast('위치 측정 중… 3초간 움직이지 마세요', 3000);
-    setTimeout(() => {
-      const pts = samples.filter(s => s.t >= t0 - 1500);
-      if (!pts.length) { resolve({ p: me, acc: meAccM }); return; }
-      let w = 0, lat = 0, lng = 0, best = Infinity;
-      for (const s of pts) { const k = 1 / Math.max(s.acc, 1) ** 2; w += k; lat += s.p[0] * k; lng += s.p[1] * k; best = Math.min(best, s.acc); }
-      resolve({ p: [lat / w, lng / w], acc: best });
-    }, 3000);
+    const tick = () => {
+      const el = Date.now() - t0;
+      const pts = samples.filter(s => s.t >= t0 - 1000);
+      const f = fusePoints(pts);
+      const done = el >= 8000 || (el >= 3000 && pts.length >= 5 && f && f.best <= 5);
+      if (!done) {
+        toast(`📡 위치 측정 중… 움직이지 마세요 (${pts.length}회${f ? ` · ±${Math.round(f.acc)}m` : ''})`, 1200);
+        setTimeout(tick, 500); return;
+      }
+      measuring = false;
+      if (!f) { resolve({ p: me, acc: meAccM, n: 1 }); return; }
+      if (f.acc > 10 && !confirm(`GPS 정확도가 낮습니다 (±${Math.round(f.acc)}m).\n하늘이 트인 곳에서 다시 측정하면 더 정확합니다.\n\n그래도 이 위치로 기록할까요?`)) { resolve(null); return; }
+      resolve(f);
+    };
+    tick();
   });
 }
 
@@ -253,8 +286,9 @@ function render() {
   const c = course(), h = holeDef(), r = holeRec();
   if (!c) {
     $('holeTitle').innerHTML = '<b>골프 거리측정</b><small>☰ 메뉴에서 코스를 선택하세요</small>';
-    ['dPin', 'dF', 'dC', 'dB', 'dTee', 'dLast'].forEach(id => { $(id).textContent = '—'; });
+    ['dPin', 'dF', 'dC', 'dB', 'dHole', 'dLast'].forEach(id => { $(id).textContent = '—'; });
     $('strokes').textContent = 0; $('putts').textContent = 0; $('shotList').textContent = '';
+    $('lastShot').style.display = 'none';
     return;
   }
   $('holeTitle').innerHTML = `<b>${holeIdx() + 1}번홀 · Par ${h.par} <span style="font-size:13px;opacity:.6">✎</span></b><small>${esc(c.name)}</small>`;
@@ -263,18 +297,52 @@ function render() {
   $('dF').textContent = me && g.f ? fmt(haversine(me, g.f)) : '—';
   $('dC').textContent = me && g.c ? fmt(haversine(me, g.c)) : '—';
   $('dB').textContent = me && g.b ? fmt(haversine(me, g.b)) : '—';
-  $('dPin').textContent = me && pin ? fmt(haversine(me, pin)) : (g.c ? '—' : '미설정');
+  $('dPin').textContent = me && pin ? fmt(haversine(me, pin)) : (g.c ? '—' : '그린 위치 미등록 — 탭하여 등록');
+  $('dPin').parentElement.classList.toggle('nogreen', !g.c);
   $('pinLbl').textContent = `핀까지 (${unitLbl()}) · ${pinName(r.pin)}`;
   document.querySelectorAll('[data-pin]').forEach(b => b.classList.toggle('on', +b.dataset.pin === r.pin));
   $('pinSlider').value = r.pin;
 
   const shots = r.shots;
-  $('dTee').textContent = me && shots.length ? fmt(haversine(shots[0].p, me)) : '—';
-  $('dLast').textContent = me && shots.length ? fmt(haversine(shots[shots.length - 1].p, me)) : '—';
+  // 홀 전장: 기록한 티샷 지점(없으면 등록된 티, 그것도 없으면 현재 위치) → 핀
+  const teeP = shots.length ? shots[0].p : h.tee;
+  $('dHole').textContent = pin && teeP ? fmt(haversine(teeP, pin)) + unitLbl() : pin && me ? '티에서 「티샷 위치」' : '—';
+  $('dLast').textContent = me && shots.length ? fmt(haversine(shots[shots.length - 1].p, me)) + unitLbl() : '—';
+  const n = shots.length - 1;
+  if (n >= 1) {
+    const flown = haversine(shots[n - 1].p, shots[n].p), left = pin ? haversine(shots[n].p, pin) : null;
+    const acc = Math.round(Math.hypot(shots[n - 1].acc || 0, shots[n].acc || 0));
+    $('lastShot').innerHTML = `${n}샷 <b>${fmt(flown)}${unitLbl()}</b> 날아감${left != null ? ` · 핀까지 남은 <b>${fmt(left)}${unitLbl()}</b>` : ''}`
+      + (acc ? ` <span class="muted">±${acc}m</span>` : '');
+    $('lastShot').style.display = 'block';
+  } else $('lastShot').style.display = 'none';
   $('shotList').textContent = shotSummary(shots, pin);
   $('strokes').textContent = r.strokes;
+  $('strokesLbl').textContent = r.manual || shots.length < 2 ? '타수' : '타수(자동)';
   $('putts').textContent = r.putts;
+  checkOnGreen(g, r);
   drawLayers();
+}
+
+// 온그린 판정: 그린 중앙에서 (그린 반경 + GPS 오차 여유) 이내 → 퍼트 입력 안내
+function greenRadius(g) {
+  const r = Math.max(g.f ? haversine(g.f, g.c) : 0, g.b ? haversine(g.b, g.c) : 0);
+  return (r || 12) + 3;
+}
+let onGreenHole = null;
+function checkOnGreen(g, r) {
+  const key = round().date + ':' + holeIdx();
+  const on = !!(me && g.c && haversine(me, g.c) <= greenRadius(g));
+  document.getElementById('puttBox').classList.toggle('hl', on && !r.putts);
+  if (on && onGreenHole !== key) {
+    onGreenHole = key;
+    toast(`⛳ 온그린 — ${r.shots.length >= 2 ? '그린 위 볼 위치를 「샷 위치 기록」 후 ' : ''}퍼트 수를 입력하세요`, 3500);
+  }
+}
+// 타수 자동 계산: 기록한 샷 위치 수(티 제외) + 퍼트. 타수를 직접 누르면 수동 모드
+function autoStrokes(r) {
+  if (r.manual || r.shots.length < 2) return;
+  r.strokes = (r.shots.length - 1) + r.putts;
 }
 function pinName(v) { return v === 0 ? '앞핀' : v === 50 ? '중핀' : v === 100 ? '뒤핀' : `핀 ${v}%`; }
 function shotSummary(shots, pin) {
@@ -378,28 +446,40 @@ document.getElementById('teeBtn').addEventListener('click', async () => {
   if (!course()) { openMenu(); return; }
   const r = holeRec();
   if (r.shots.length && !confirm('이 홀의 샷 기록을 지우고 티 위치를 다시 잡을까요?')) return;
+  if (!me) { toast('GPS 신호 대기 중'); return; }
   const s = await stablePosition();
-  if (!s) { toast('GPS 신호 대기 중'); return; }
+  if (!s) return;
   r.shots = [{ p: s.p, acc: s.acc, t: Date.now() }];
   if (!holeDef().tee) holeDef().tee = s.p;
-  save(); render(); toast(`티 위치 기록 (±${Math.round(s.acc)}m)`);
+  autoStrokes(r); save(); render();
+  const pin = pinPoint();
+  toast(`티 위치 기록 (±${Math.round(s.acc)}m)` + (pin ? ` · 핀까지 ${fmt(haversine(s.p, pin))}${unitLbl()}` : ''), 3000);
 });
 document.getElementById('shotBtn').addEventListener('click', async () => {
   if (!course()) { openMenu(); return; }
   const r = holeRec();
-  if (!r.shots.length) { toast('먼저 「티샷 위치」를 기록하세요'); return; }
+  if (!r.shots.length) {
+    if (!holeDef().tee || !confirm('티샷 위치가 기록되지 않았습니다.\n등록된 티잉그라운드 위치에서 친 것으로 보고 거리를 계산할까요?')) {
+      toast('티잉그라운드에서 먼저 「티샷 위치」를 누르세요', 2500); return;
+    }
+    r.shots = [{ p: holeDef().tee, acc: 0, t: Date.now(), reg: true }];
+  }
+  if (!me) { toast('GPS 신호 대기 중'); return; }
   const s = await stablePosition();
-  if (!s) { toast('GPS 신호 대기 중'); return; }
+  if (!s) return;
   const prev = r.shots[r.shots.length - 1].p;
   r.shots.push({ p: s.p, acc: s.acc, t: Date.now() });
-  save(); render();
+  autoStrokes(r); save(); render();
   const pin = pinPoint();
-  toast(`${r.shots.length - 1}샷 ${fmt(haversine(prev, s.p))}${unitLbl()}` + (pin ? ` · 남은 ${fmt(haversine(s.p, pin))}${unitLbl()}` : ''), 3000);
+  toast(`${r.shots.length - 1}샷 ${fmt(haversine(prev, s.p))}${unitLbl()} 날아감` + (pin ? ` · 핀까지 남은 ${fmt(haversine(s.p, pin))}${unitLbl()}` : ''), 3500);
 });
 document.getElementById('undoBtn').addEventListener('click', () => {
   const r = holeRec(); if (!r || !r.shots.length) return;
   if (!confirm('마지막 샷 위치 기록을 취소할까요?')) return;
-  r.shots.pop(); save(); render();
+  r.shots.pop(); autoStrokes(r); save(); render();
+});
+document.getElementById('dPin').parentElement.addEventListener('click', () => {
+  const h = holeDef(); if (h && !(h.green && h.green.c)) enterSetup('c');
 });
 
 // ---------- 핀 위치 ----------
@@ -412,6 +492,8 @@ document.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', (
   const r = holeRec(); if (!r) return;
   const k = b.dataset.c;
   r[k] = Math.max(0, r[k] + (+b.dataset.d));
+  if (k === 'strokes') r.manual = true;          // 타수를 직접 바꾸면 자동 계산 중지 (OB·벌타 등)
+  else autoStrokes(r);
   if (k === 'putts' && r.putts > r.strokes) r.strokes = r.putts;
   save(); render();
 }));
@@ -502,6 +584,7 @@ box.addEventListener('click', e => {
   else if (a === 'locGo') locSearch(id);
   else if (a === 'locPick') { const r = locState.results[+t.dataset.k]; if (r) setCourseCenter(id, [+r.lat, +r.lon]); }
   else if (a === 'loc') locSheet(id, store.courses[id].name);
+  else if (a === 'goto') { closeSheet(); goHole(+id - holeIdx()); }
   else if (a === 'holePar') { setPar(round().courseId, holeIdx(), +id); save(); render(); holeSheet(); toast(`${holeIdx() + 1}번홀 Par ${id}로 저장`); }
   else if (a === 'holeClear') { if (confirm('이 홀의 그린·티 위치를 지울까요?')) { holeDef().green = null; holeDef().tee = null; save(); render(); holeSheet(); } }
   else if (a === 'osmManual') { closeSheet(); newCourse(osmState.picked ? osmState.picked.name : ''); }
@@ -802,7 +885,7 @@ function showCard(rd, c) {
       const p = c.holes[i].par, h = rd.holes[i];
       par += p; st += h.strokes; pt += h.putts;
       const diff = h.strokes ? h.strokes - p : null;
-      cells += `<tr><td>${i + 1}</td><td>${p}</td><td class="${diff < 0 ? 'under' : diff > 0 ? 'over' : ''}">${h.strokes || ''}</td>
+      cells += `<tr ${rd === round() ? `data-act="goto" data-id="${i}" style="cursor:pointer"` : ''}><td>${i + 1}</td><td>${p}</td><td class="${diff < 0 ? 'under' : diff > 0 ? 'over' : ''}">${h.strokes || ''}</td>
         <td>${h.putts || ''}</td><td>${diff == null ? '' : diff > 0 ? '+' + diff : diff}</td><td>${longest(h.shots)}</td></tr>`;
     }
     return { html: cells + `<tr class="sum"><td>${label}</td><td>${par}</td><td>${st || ''}</td><td>${pt || ''}</td><td></td><td></td></tr>`, par, st, pt };
@@ -814,7 +897,7 @@ function showCard(rd, c) {
   openSheet(`<h3>스코어카드 · ${esc(c.name)}</h3><p class="muted">${new Date(rd.date).toLocaleString('ko-KR')}</p>
     <table class="card"><tr><th>홀</th><th>Par</th><th>타수</th><th>퍼트</th><th>±</th><th>최장샷</th></tr>${o.html}${n.html}
     <tr class="sum"><td>합계</td><td>${o.par + n.par}</td><td>${tot || ''}</td><td>${o.pt + n.pt || ''}</td><td>${played.length ? (diff > 0 ? '+' : '') + diff : ''}</td><td></td></tr></table>
-    <p class="muted">최장샷 단위: ${unitLbl()} (기록된 샷 위치 기준)</p>
+    <p class="muted">최장샷 단위: ${unitLbl()} (기록된 샷 위치 기준)${rd === round() ? ' · 홀을 누르면 그 홀로 이동해 타수·퍼트를 고칠 수 있습니다' : ''}</p>
     <div class="list"><button data-act="close">닫기</button></div>`);
 }
 function longest(shots) {
