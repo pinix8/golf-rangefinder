@@ -8,8 +8,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>골프 거리측정</title>
 <link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="골프거리">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root {
@@ -428,6 +431,33 @@ function closeSheet() { sheet.classList.remove('show'); }
 sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
 document.getElementById('menuBtn').addEventListener('click', openMenu);
 
+// ── 앱 설치 (Android: 설치 프롬프트, iPhone: 안내) ──
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; });
+window.addEventListener('appinstalled', () => { installPrompt = null; });
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+async function showInstall() {
+  if (installPrompt) {
+    closeSheet();
+    installPrompt.prompt();
+    await installPrompt.userChoice.catch(() => {});
+    installPrompt = null;
+    return;
+  }
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  openSheet(`<h3>📲 앱으로 설치</h3>
+    ${ios ? `<p><b>iPhone (Safari)</b></p>
+      <p>1. 화면 아래 <b>공유 버튼(□↑)</b>을 누릅니다.<br>2. <b>「홈 화면에 추가」</b>를 누릅니다.<br>3. 오른쪽 위 <b>「추가」</b>를 누르면 홈 화면에 아이콘이 생깁니다.</p>
+      <p class="muted">Chrome 등 다른 브라우저에서 열었다면 Safari로 다시 여세요.</p>`
+    : `<p><b>Android (Chrome)</b></p>
+      <p>1. 오른쪽 위 <b>⋮ 메뉴</b>를 누릅니다.<br>2. <b>「앱 설치」</b> 또는 <b>「홈 화면에 추가」</b>를 누릅니다.<br>3. 「설치」를 누르면 앱 서랍과 홈 화면에 아이콘이 생깁니다.</p>
+      <p class="muted">삼성 인터넷은 메뉴 → 「현재 페이지 추가」 → 「홈 화면」입니다.</p>`}
+    <p class="muted">설치 후에는 주소창 없이 전체 화면으로 열리고, 한 번 본 위성지도는 데이터가 약해도 표시됩니다.</p>
+    <div class="list"><button data-act="close">닫기</button></div>`);
+}
+
 function openMenu() {
   const rd = round();
   openSheet(`<h3>메뉴</h3><div class="list">
@@ -439,6 +469,7 @@ function openMenu() {
     <button data-act="history">📚 지난 라운드</button>
     <button data-act="unit">📏 단위: ${store.unit === 'm' ? '미터(m)' : '야드(yd)'} → 변경</button>
     <button data-act="backup">💾 데이터 백업/복원</button>
+    ${isStandalone() ? '' : '<button data-act="install">📲 휴대폰에 앱으로 설치</button>'}
     <button data-act="close">닫기</button></div>
     <p class="muted">GPS 정확도는 휴대폰·하늘 상태에 따라 보통 ±3~10m입니다. 배지가 초록색일 때 기록하세요.</p>`);
 }
@@ -446,6 +477,7 @@ box.addEventListener('click', e => {
   const t = e.target.closest('[data-act]'); if (!t) return;
   const a = t.dataset.act, id = t.dataset.id;
   if (a === 'close') closeSheet();
+  else if (a === 'install') showInstall();
   else if (a === 'card') showCard(round(), course());
   else if (a === 'setup') { closeSheet(); enterSetup('c'); }
   else if (a === 'finish') finishRound();
