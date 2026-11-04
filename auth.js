@@ -43,27 +43,40 @@
   }
   function gatePw(name, isNew, msg) {
     card(`<p><b>${esc(name)}</b>님 ${isNew ? '처음 오셨네요. 사용할 비밀번호를 정하세요 (6자 이상)' : '비밀번호를 입력하세요'}</p>
-      ${field('gPw', '비밀번호', 'password')}${isNew ? field('gPw2', '비밀번호 확인', 'password') : ''}${msgHtml(msg)}
+      ${field('gPw', '비밀번호', 'password')}${isNew ? field('gPw2', '비밀번호 확인 (한 번 더)', 'password') : ''}
+      <label style="display:block;margin:4px 0;font-size:14px"><input type="checkbox" id="gShow"> 비밀번호 보이기</label>
+      <p class="muted" id="gCount"></p><div id="gMsg">${msgHtml(msg)}</div>
       <button class="primary" id="gGo" style="width:100%;margin-top:6px">${isNew ? '비밀번호 설정하고 시작' : '로그인'}</button>
       <button id="gBack" style="width:100%;margin-top:6px">← 이름 다시 입력</button>
       ${isNew ? '' : '<p class="muted">비밀번호를 잊었으면 관리자에게 초기화를 요청하세요.</p>'}`);
-    const pw = document.getElementById('gPw');
-    gate.querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }));
+    const pw = document.getElementById('gPw'), pw2 = document.getElementById('gPw2');
+    const goBtn = document.getElementById('gGo');
+    const say = m => { document.getElementById('gMsg').innerHTML = msgHtml(m); };   // 오류는 입력값을 지우지 않고 표시
+    const count = () => { document.getElementById('gCount').textContent = `입력한 글자: ${pw.value.length}자${pw2 ? ` / 확인 ${pw2.value.length}자` : ''}`; };
+    [pw, pw2].filter(Boolean).forEach(i => i.addEventListener('input', count));
+    count();
+    document.getElementById('gShow').onchange = e => [pw, pw2].filter(Boolean).forEach(i => { i.type = e.target.checked ? 'text' : 'password'; });
+    // Enter(휴대폰 「이동」): 첫 칸에서는 확인 칸으로 이동, 마지막 칸에서 제출
+    pw.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (pw2) pw2.focus(); else go(); } });
+    if (pw2) pw2.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
     document.getElementById('gBack').onclick = () => gateName();
-    document.getElementById('gGo').onclick = go;
+    goBtn.onclick = go;
     setTimeout(() => pw.focus(), 50);
     async function go() {
       const p = pw.value;
-      if (p.length < 6) return gatePw(name, isNew, '비밀번호는 6자 이상이어야 합니다');
-      if (isNew && p !== document.getElementById('gPw2').value) return gatePw(name, isNew, '비밀번호 확인이 일치하지 않습니다');
+      if (p.length < 6) return say(`비밀번호는 6자 이상이어야 합니다 (지금 ${p.length}자)`);
+      if (pw2 && !pw2.value) { pw2.focus(); return say('아래 「비밀번호 확인」 칸에 같은 비밀번호를 한 번 더 입력하세요'); }
+      if (pw2 && p !== pw2.value) return say('두 칸의 비밀번호가 다릅니다. 「비밀번호 보이기」로 확인해 보세요');
+      goBtn.disabled = true; say('');
       const res = isNew ? await sb.auth.signUp({ email: emailOf(name), password: p })
         : await sb.auth.signInWithPassword({ email: emailOf(name), password: p });
+      goBtn.disabled = false;
       if (res.error) {
-        const m = /invalid login/i.test(res.error.message) ? '비밀번호가 틀렸습니다'
-          : /database error/i.test(res.error.message) ? '등록되지 않았거나 이미 비밀번호가 설정된 이름입니다' : res.error.message;
-        return gatePw(name, isNew, m);
+        return say(/invalid login/i.test(res.error.message) ? '비밀번호가 틀렸습니다'
+          : /database error|등록되지|이미 비밀번호/i.test(res.error.message) ? '등록되지 않았거나 이미 비밀번호가 설정된 이름입니다'
+          : /password/i.test(res.error.message) ? '서버가 이 비밀번호를 거부했습니다: ' + res.error.message : res.error.message);
       }
-      if (!res.data.session) return gatePw(name, isNew, '서버 설정 오류: Supabase에서 「Confirm email」을 꺼야 합니다');
+      if (!res.data.session) return say('서버 설정 오류: Supabase에서 「Confirm email」을 꺼야 합니다');
       try { await afterLogin(); } catch (e) { gateName('로그인 후 정보를 불러오지 못했습니다: ' + e.message); }
     }
   }
