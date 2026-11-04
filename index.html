@@ -160,7 +160,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="osm.js"></script>
-<script src="courses-kr.js"></script>
 <script>
 'use strict';
 
@@ -556,6 +555,7 @@ function openMenu() {
     <button data-act="unit">📏 단위: ${store.unit === 'm' ? '미터(m)' : '야드(yd)'} → 변경</button>
     <button data-act="backup">💾 데이터 백업/복원</button>
     ${isStandalone() ? '' : '<button data-act="install">📲 휴대폰에 앱으로 설치</button>'}
+    ${window.GolfAuth ? GolfAuth.menuHtml() : ''}
     <button data-act="close">닫기</button></div>
     <p class="muted">GPS 정확도는 휴대폰·하늘 상태에 따라 보통 ±3~10m입니다. 배지가 초록색일 때 기록하세요.</p>`);
 }
@@ -616,8 +616,9 @@ function osmSearchSheet(msg) {
   q.addEventListener('keydown', e => { if (e.key === 'Enter') osmRunSearch(); });
   if (!msg) setTimeout(() => q.focus(), 50);
 }
-// 내장 파 데이터(courses-kr.js) 검색 — 오프라인에서도 동작
+// 골프장 파 데이터 검색 — 로그인 후 서버(Supabase)에서 받아 auth.js가 setParDb로 채움(휴대폰 캐시로 오프라인 동작)
 const PAR_DB = window.GOLF_PAR_DB || [];
+function setParDb(list) { PAR_DB.length = 0; PAR_DB.push(...list); }
 const normName = s => String(s || '').toLowerCase().replace(/\s+/g, '')
   .replace(/(컨트리클럽|골프클럽|골프앤리조트|골프리조트|골프장|리조트|cc|gc|countryclub|golfclub)$/, '');
 function searchParDb(q) {
@@ -688,7 +689,7 @@ function dbPick(i) {
     <div class="row"><span style="flex:0 0 auto">전반</span><select id="dbFront">${opt(0)}</select>
       <span style="flex:0 0 auto">후반</span><select id="dbBack">${opt(c.nines.length > 1 ? 1 : 0)}</select></div>
     <p class="muted">출처: ${esc(c.source || '-')} (${esc(c.checked || '')} 조회). 그린 위치는 라운드 중 지도에서 탭해 등록합니다.</p>
-    <div class="list"><button data-act="dbCreate" class="primary">코스 만들기</button><button data-act="osmSearch">← 다시 검색</button></div>`);
+    <div class="list"><button data-act="dbCreate" class="primary">코스 만들기</button>${window.GolfAuth ? GolfAuth.editButton(c.name) : ''}<button data-act="osmSearch">← 다시 검색</button></div>`);
 }
 function dbCreate() {
   const c = osmState.dbPicked;
@@ -970,5 +971,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 startGps(); keepAwake(); render(); fitHole();
 if (!round()) setTimeout(openMenu, 400);
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="auth.js"></script>
 </body>
 </html>
