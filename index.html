@@ -159,7 +159,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="osm.js?v=12"></script>
+<script src="osm.js?v=13"></script>
 <script>
 'use strict';
 
@@ -550,7 +550,7 @@ function openMenu() {
             <button data-act="setup">📍 ${holeIdx() + 1}번홀 그린·티 위치 설정</button>
             <button data-act="finish">🏁 라운드 종료·저장</button>` : ''}
     <button data-act="start">⛳ ${rd ? '다른 코스로 새 라운드' : '라운드 시작 (코스 선택)'}</button>
-    <button data-act="courses">🗺️ 코스 관리 (파·그린 위치)</button>
+    <button data-act="courses">🗺️ 코스 관리 (${canEdit() ? '파·' : ''}그린 위치)</button>
     <button data-act="history">📚 지난 라운드</button>
     <button data-act="unit">📏 단위: ${store.unit === 'm' ? '미터(m)' : '야드(yd)'} → 변경</button>
     <button data-act="backup">💾 데이터 백업/복원</button>
@@ -562,6 +562,7 @@ function openMenu() {
 box.addEventListener('click', e => {
   const t = e.target.closest('[data-act]'); if (!t) return;
   const a = t.dataset.act, id = t.dataset.id;
+  if (ADMIN_ACTS.has(a) && !canEdit()) { toast('골프장 추가·파 수정은 관리자만 할 수 있습니다', 2500); return; }
   if (a === 'close') closeSheet();
   else if (a === 'install') showInstall();
   else if (a === 'card') showCard(round(), course());
@@ -598,6 +599,7 @@ box.addEventListener('click', e => {
 });
 box.addEventListener('change', e => {
   const t = e.target;
+  if ((t.dataset.par || t.id === 'cname') && !canEdit()) { toast('파·코스 이름 수정은 관리자만 할 수 있습니다', 2500); return; }
   if (t.dataset.par) { setPar(t.dataset.cid, +t.dataset.par, +t.value); save(); render(); }
   if (t.id === 'cname') { store.courses[t.dataset.cid].name = t.value.trim() || '이름없음'; save(); render(); }
   if (t.id === 'importFile' && t.files[0]) importData(t.files[0]);
@@ -609,16 +611,35 @@ function osmSearchSheet(msg) {
   openSheet(`<h3>🔎 골프장 검색</h3>
     <div class="row"><input type="text" id="osmQ" placeholder="예: 남서울, 아난티 중앙" value="${esc(osmState.query)}" enterkeyhint="search">
       <button data-act="osmGo" class="primary" style="flex:0 0 auto">검색</button></div>
-    <p class="muted">OpenStreetMap에 홀 정보가 등록된 골프장은 파·그린 위치를 자동으로 채웁니다. 국내는 아직 일부 골프장만 등록되어 있어, 없으면 파를 숫자로 빠르게 입력하면 됩니다.</p>
+    <p class="muted">${canEdit() ? 'OpenStreetMap에 홀 정보가 등록된 골프장은 파·그린 위치를 자동으로 채웁니다. 국내는 아직 일부 골프장만 등록되어 있어, 없으면 파를 숫자로 빠르게 입력하면 됩니다.'
+      : '관리자가 등록한 골프장에서 검색합니다. 없는 골프장은 관리자에게 추가를 요청하세요.'}</p>
     <div id="osmOut">${msg || ''}</div>
     <div class="list"><button data-act="courses">← 코스 목록</button></div>`);
   const q = document.getElementById('osmQ');
   q.addEventListener('keydown', e => { if (e.key === 'Enter') osmRunSearch(); });
-  if (!msg) setTimeout(() => q.focus(), 50);
+  if (!msg) setTimeout(() => { if (q.isConnected) q.focus(); }, 50);
 }
 // 골프장 파 데이터 검색 — 로그인 후 서버(Supabase)에서 받아 auth.js가 setParDb로 채움(휴대폰 캐시로 오프라인 동작)
 const PAR_DB = window.GOLF_PAR_DB || [];
-function setParDb(list) { PAR_DB.length = 0; PAR_DB.push(...list); }
+function setParDb(list) { PAR_DB.length = 0; PAR_DB.push(...list); enforceMemberPars(); }
+// 권한: 골프장 추가·파 수정은 관리자만. 일반 회원은 서버 DB 골프장으로 라운드·그린 위치 등록·기록 저장만 가능
+// (서버는 RLS로 막혀 있고, 이 화면 제한은 회원 휴대폰 안의 사본까지 서버 파와 같게 유지하기 위함)
+const canEdit = () => !!(window.GolfAuth && GolfAuth.isAdmin());
+const ADMIN_ACTS = new Set(['newCourse', 'ncCreate', 'osmPick', 'osmCreate', 'osmManual', 'parApply', 'holePar', 'dbReset']);
+function enforceMemberPars() {   // 회원 기기: 서버 DB 코스의 파를 서버 값으로 되돌리고 직접 수정값 제거
+  if (canEdit() || !PAR_DB.length) return;
+  let changed = !!store.dbFix;
+  delete store.dbFix;
+  Object.values(store.courses).forEach(c => {
+    if (!c.src || !c.src.startsWith('db:') || !c.nines) return;
+    const base = PAR_DB.find(x => x.name === c.src.slice(3)); if (!base) return;
+    c.nines.forEach((label, half) => {
+      const n = base.nines.find(x => x.label === label); if (!n) return;
+      n.pars.forEach((p, k) => { const h = c.holes[half * 9 + k]; if (h && h.par !== p) { h.par = p; changed = true; } });
+    });
+  });
+  if (changed) { save(); render(); }
+}
 const normName = s => String(s || '').toLowerCase().replace(/\s+/g, '')
   .replace(/(컨트리클럽|골프클럽|골프앤리조트|골프리조트|골프장|리조트|cc|gc|countryclub|golfclub)$/, '');
 function searchParDb(q) {
@@ -640,6 +661,10 @@ async function osmRunSearch() {
     ? `<p><b>📋 파 정보 내장</b></p><div class="list">${db.map(({ c, i }) =>
         `<button data-act="dbPick" data-id="${i}">⛳ ${esc(c.name)} <span class="muted">· ${c.nines.length * 9}홀${c.verified ? '' : ' · 확인 필요'}</span></button>`).join('')}</div>`
     : '';
+  if (!canEdit()) {   // 회원: 서버에 등록된 골프장만 (새 골프장 추가는 관리자에게 요청)
+    out.innerHTML = dbHtml || `<p>「${esc(q)}」 골프장을 찾지 못했습니다. 이름을 짧게 (예: 「레이크사이드」) 다시 검색하세요. 없는 골프장은 관리자에게 추가를 요청하세요.</p>`;
+    return;
+  }
   out.innerHTML = dbHtml + '<p class="muted">OpenStreetMap 검색 중… (그린 위치 포함 가능)</p>';
   try {
     osmState.results = await GolfOSM.searchCourses(q);
@@ -657,7 +682,7 @@ async function osmRunSearch() {
 }
 // 내장 데이터 코스의 파를 고치면 store.dbFix에 기억 → 같은 골프장으로 코스를 다시 만들 때도 수정값 사용
 function dbPars(c, n) {
-  const fix = store.dbFix && store.dbFix[c.name] && store.dbFix[c.name][n.label];
+  const fix = canEdit() && store.dbFix && store.dbFix[c.name] && store.dbFix[c.name][n.label];
   return fix && fix.length === 9 ? fix : n.pars;
 }
 function setPar(cid, i, p) {
@@ -679,7 +704,7 @@ function dbPick(i) {
   osmState.dbPicked = c;
   const opt = sel => c.nines.map((n, k) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(n.label)}</option>`).join('');
   const sum = p => p.reduce((s, v) => s + v, 0);
-  const fixed = !!(store.dbFix && store.dbFix[c.name]);
+  const fixed = canEdit() && !!(store.dbFix && store.dbFix[c.name]);
   openSheet(`<h3>${esc(c.name)}</h3>
     <table class="card"><tr><th>코스</th><th>홀별 파</th><th>합</th></tr>
     ${c.nines.map(n => { const p = dbPars(c, n), mine = p !== n.pars;
@@ -763,7 +788,7 @@ function newCourse(preset) {
     <p><b>파</b> <span class="muted">스코어카드 숫자 18자리 (비워두면 모두 Par 4, 나중에 수정 가능)</span></p>
     <div class="row"><input type="text" id="ncPar" inputmode="numeric" autocomplete="off" placeholder="예: 443545344 453434354"></div>
     <div class="list"><button data-act="ncCreate" class="primary">만들기 → 위치 찾기</button><button data-act="courses">← 코스 목록</button></div>`);
-  setTimeout(() => document.getElementById('ncName').focus(), 50);
+  setTimeout(() => { const el = document.getElementById('ncName'); if (el) el.focus(); }, 50);
 }
 function ncCreate() {
   const name = document.getElementById('ncName').value.trim();
@@ -827,16 +852,18 @@ function setCourseCenter(id, p) {
 // ---------- 라운드 중 홀 정보 바로 수정 (상단 홀 제목 탭) ----------
 function holeSheet() {
   const c = course(); if (!c) { openMenu(); return; }
-  const h = holeDef(), n = holeIdx() + 1, cid = round().courseId;
-  openSheet(`<h3>${n}번홀 정보 수정</h3>
-    <p><b>파</b></p>
-    <div class="row">${[3, 4, 5, 6].map(p => `<button data-act="holePar" data-id="${p}" class="${p === h.par ? 'on' : ''}">Par ${p}</button>`).join('')}</div>
+  const h = holeDef(), n = holeIdx() + 1, cid = round().courseId, adm = canEdit();
+  openSheet(`<h3>${n}번홀 정보${adm ? ' 수정' : ''}</h3>
+    ${adm ? `<p><b>파</b></p>
+    <div class="row">${[3, 4, 5, 6].map(p => `<button data-act="holePar" data-id="${p}" class="${p === h.par ? 'on' : ''}">Par ${p}</button>`).join('')}</div>`
+      : `<p><b>Par ${h.par}</b> <span class="muted">· 파 정보가 틀리면 관리자에게 알려 주세요</span></p>`}
     <div class="list">
       <button data-act="setup">📍 그린·티 위치 다시 지정 (지도 탭)</button>
       ${h.green || h.tee ? '<button data-act="holeClear">🗑 이 홀 그린·티 위치 지우기</button>' : ''}
-      <button data-act="edit" data-id="${cid}">✏️ 코스 전체 편집 (18홀 파·이름)</button>
+      <button data-act="edit" data-id="${cid}">${adm ? '✏️ 코스 전체 편집 (18홀 파·이름)' : '📋 코스 정보 (18홀 파·그린 등록 현황)'}</button>
       <button data-act="close">닫기</button></div>
-    <p class="muted">수정하면 바로 저장되어 다음 라운드에도 적용됩니다.${c.src && c.src.startsWith('db:') ? ' 내장 데이터 골프장은 다음에 같은 골프장으로 코스를 만들 때도 수정값이 쓰입니다.' : ''}</p>`);
+    <p class="muted">${adm ? `수정하면 바로 저장되어 다음 라운드에도 적용됩니다.${c.src && c.src.startsWith('db:') ? ' 내장 데이터 골프장은 다음에 같은 골프장으로 코스를 만들 때도 수정값이 쓰입니다.' : ''}`
+      : '그린·티 위치는 이 휴대폰에만 저장되어 다음 라운드에도 재사용됩니다.'}</p>`);
 }
 document.getElementById('holeTitle').addEventListener('click', holeSheet);
 function chooseCourse() {
@@ -844,7 +871,7 @@ function chooseCourse() {
   openSheet(`<h3>코스 선택</h3><div class="list">
     ${ids.map(id => `<button data-act="play" data-id="${id}">⛳ ${esc(store.courses[id].name)} <span class="muted">· 그린 ${greenCount(id)}/18 설정</span></button>`).join('')}
     <button data-act="osmSearch" class="primary">🔎 골프장 검색해서 불러오기</button>
-    <button data-act="newCourse">＋ 새 코스 직접 만들기</button><button data-act="close">닫기</button></div>`);
+    ${canEdit() ? '<button data-act="newCourse">＋ 새 코스 직접 만들기</button>' : ''}<button data-act="close">닫기</button></div>`);
 }
 function greenCount(id) { return store.courses[id].holes.filter(h => h.green && h.green.c).length; }
 function startRound(id) {
@@ -863,19 +890,19 @@ function manageCourses() {
     ${ids.map(id => `<div class="row"><button data-act="edit" data-id="${id}">✏️ ${esc(store.courses[id].name)} <span class="muted">(그린 ${greenCount(id)}/18)</span></button>
       <button data-act="delCourse" data-id="${id}" style="flex:0 0 auto">🗑</button></div>`).join('') || '<p class="muted">등록된 코스가 없습니다.</p>'}
     <button data-act="osmSearch" class="primary">🔎 골프장 검색해서 불러오기</button>
-    <button data-act="newCourse">＋ 새 코스 직접 만들기</button><button data-act="close">닫기</button></div>`);
+    ${canEdit() ? '<button data-act="newCourse">＋ 새 코스 직접 만들기</button>' : ''}<button data-act="close">닫기</button></div>`);
 }
 function editCourse(id) {
-  const c = store.courses[id];
+  const c = store.courses[id], adm = canEdit();
   const par = c.holes.reduce((s, h) => s + h.par, 0);
-  openSheet(`<h3>코스 편집</h3>
-    <div class="row"><input type="text" id="cname" data-cid="${id}" value="${esc(c.name)}"></div>
+  openSheet(`<h3>${adm ? '코스 편집' : esc(c.name)}</h3>
+    ${adm ? `<div class="row"><input type="text" id="cname" data-cid="${id}" value="${esc(c.name)}"></div>
     <p><b>파 한 번에 입력</b> <span class="muted">스코어카드의 파를 숫자로 (18자리, 공백 무관)</span></p>
     <div class="row"><input type="text" id="parQuick" inputmode="numeric" autocomplete="off" placeholder="예: 443545344 453434354">
-      <button data-act="parApply" data-id="${id}" style="flex:0 0 auto">적용</button></div>
-    <p class="muted">홀별 파를 지정하세요 (총 Par ${par}). 그린 위치는 라운드 중 해당 홀에서 ☰ → 「그린·티 위치 설정」으로 지도를 탭해 등록합니다. 한 번 등록하면 다음 라운드부터 재사용됩니다.</p>
+      <button data-act="parApply" data-id="${id}" style="flex:0 0 auto">적용</button></div>` : ''}
+    <p class="muted">${adm ? '홀별 파를 지정하세요 ' : '파는 관리자가 등록한 값입니다 '}(총 Par ${par}). 그린 위치는 라운드 중 해당 홀에서 ☰ → 「그린·티 위치 설정」으로 지도를 탭해 등록합니다. 한 번 등록하면 다음 라운드부터 재사용됩니다.</p>
     <div class="holegrid">${c.holes.map((h, i) => `<div>${i + 1}번 ${h.green && h.green.c ? '✅' : '⬜'}<br>
-      <select data-par="${i}" data-cid="${id}">${[3, 4, 5, 6].map(p => `<option ${p === h.par ? 'selected' : ''}>${p}</option>`).join('')}</select></div>`).join('')}</div>
+      ${adm ? `<select data-par="${i}" data-cid="${id}">${[3, 4, 5, 6].map(p => `<option ${p === h.par ? 'selected' : ''}>${p}</option>`).join('')}</select>` : `Par ${h.par}`}</div>`).join('')}</div>
     <div class="list"><button data-act="play" data-id="${id}" class="primary">이 코스로 라운드 시작</button>
       <button data-act="loc" data-id="${id}">🌏 골프장 위치 ${c.center ? '✅ 설정됨 (변경)' : '찾기 — 해외 등 미리 그린 등록용'}</button>
       <button data-act="courses">← 코스 목록</button></div>`);
@@ -944,7 +971,13 @@ function importData(file) {
       if (!d.courses) throw new Error('형식 오류');
       if (!confirm('현재 데이터를 백업 파일 내용으로 바꿀까요?')) return;
       Object.keys(store).forEach(k => delete store[k]);
-      Object.assign(store, d); save(); closeSheet(); render(); fitHole(); toast('복원 완료');
+      Object.assign(store, d);
+      if (!canEdit()) {   // 회원: 서버 DB 골프장만 남기고 파는 서버 값으로
+        Object.keys(store.courses).forEach(id => { const s = store.courses[id].src; if (!s || !s.startsWith('db:')) delete store.courses[id]; });
+        if (store.round && !store.courses[store.round.courseId]) store.round = null;
+        enforceMemberPars();
+      }
+      save(); closeSheet(); render(); fitHole(); toast('복원 완료');
     } catch (e) { toast('불러오기 실패: 올바른 백업 파일이 아닙니다'); }
   };
   fr.readAsText(file);
@@ -972,6 +1005,6 @@ startGps(); keepAwake(); render(); fitHole();
 if (!round()) setTimeout(openMenu, 400);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="auth.js?v=12"></script>
+<script src="auth.js?v=13"></script>
 </body>
 </html>
