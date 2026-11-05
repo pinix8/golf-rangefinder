@@ -103,6 +103,10 @@
   .leaflet-container { background: #111; }
   .lbl-tip { background: rgba(0,0,0,.75); color: #fff; border: 0; font-weight: 700; font-size: 13px; }
   .lbl-tip::before { display: none; }
+  .shot-tip { font-size: 12px; padding: 2px 6px; }
+  #reviewBar { position: fixed; left: 8px; right: 8px; top: 64px; z-index: 1500; display: none; background: rgba(15,30,22,.93);
+    border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; font-size: 14px; }
+  #reviewBar button { flex: 1 1 auto; padding: 6px 8px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -159,7 +163,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="osm.js?v=13"></script>
+<script src="osm.js?v=14"></script>
 <script>
 'use strict';
 
@@ -199,11 +203,7 @@ const holeDef = () => course() && course().holes[holeIdx()];
 const holeRec = () => round() && round().holes[holeIdx()];
 
 function pinPoint() {
-  const g = holeDef() && holeDef().green;
-  if (!g || !g.c) return null;
-  const p = holeRec().pin;
-  const f = g.f || g.c, b = g.b || g.c;
-  return p <= 50 ? lerp(f, g.c, p / 50) : lerp(g.c, b, (p - 50) / 50);
+  return holeDef() ? pinOf(holeDef().green, holeRec().pin) : null;
 }
 
 // ---------- 지도 ----------
@@ -356,23 +356,71 @@ function shotSummary(shots, pin) {
   return parts.length ? parts.join(' → ') + ` · 티~현재볼 ${fmt(total)}${unitLbl()}` : '티 위치 기록됨 — 볼에 도착하면 「샷 위치 기록」';
 }
 
-function drawLayers() {
-  layers.clearLayers();
-  const h = holeDef(); if (!h) return;
-  const g = h.green || {};
+// 그린 점·핀·샷 궤적(샷마다 「n샷 거리 · 남은 거리」 표시) — 진행 중 라운드와 지난 라운드 다시보기가 같이 사용
+function pinOf(g, pinPct) {
+  if (!g || !g.c) return null;
+  const f = g.f || g.c, b = g.b || g.c;
+  return pinPct <= 50 ? lerp(f, g.c, pinPct / 50) : lerp(g.c, b, (pinPct - 50) / 50);
+}
+function drawHole(g, pin, shots) {
+  g = g || {};
   const dot = (p, color, label) => L.circleMarker(p, { radius: 6, color: '#000', weight: 1, fillColor: color, fillOpacity: 1 })
     .bindTooltip(label, { permanent: true, direction: 'right', className: 'lbl-tip', offset: [6, 0] }).addTo(layers);
   if (g.f) dot(g.f, '#ffd84d', '앞');
   if (g.c) dot(g.c, '#ffffff', '중');
   if (g.b) dot(g.b, '#ff8a4d', '뒤');
-  const pin = pinPoint();
   if (pin) L.marker(pin, { icon: L.divIcon({ html: '<div style="font-size:26px;transform:translate(-4px,-22px)">🚩</div>', className: '' }) }).addTo(layers);
-  const shots = holeRec().shots;
-  if (shots.length) {
-    const path = shots.map(s => s.p);
-    L.polyline(path, { color: '#ffffff', weight: 2, dashArray: '4 6' }).addTo(layers);
-    shots.forEach((s, i) => L.circleMarker(s.p, { radius: 5, color: '#fff', weight: 2, fillColor: i ? '#e64' : '#3c3', fillOpacity: 1 }).addTo(layers));
+  if (!shots.length) return;
+  L.polyline(shots.map(s => s.p), { color: '#ffffff', weight: 3, dashArray: '6 6' }).addTo(layers);
+  shots.forEach((s, i) => {
+    const left = pin ? ` · 남은 ${fmt(haversine(s.p, pin))}${unitLbl()}` : '';
+    const label = i ? `${i}샷 ${fmt(haversine(shots[i - 1].p, s.p))}${unitLbl()}${left}` : `티${pin ? ` · 핀까지 ${fmt(haversine(s.p, pin))}${unitLbl()}` : ''}`;
+    L.circleMarker(s.p, { radius: 6, color: '#fff', weight: 2, fillColor: i ? '#e64' : '#3c3', fillOpacity: 1 })
+      .bindTooltip(label, { permanent: true, direction: i % 2 ? 'left' : 'right', className: 'lbl-tip shot-tip', offset: [i % 2 ? -8 : 8, 0] }).addTo(layers);
+  });
+}
+function fitTrack(pts) { if (pts.length > 1) map.fitBounds(pts, { padding: [70, 70], maxZoom: 19 }); else if (pts.length) map.setView(pts[0], 18); }
+
+// 지난 라운드 홀 다시보기: 지도 위에 그 홀의 궤적을 그리고 위쪽에 요약 패널 표시
+let review = null;   // { hi, i } — store.history 인덱스, 홀 인덱스
+function showHoleTrack(hi, i) {
+  const rd = store.history[hi], c = rd && rd.courseSnapshot; if (!c) return;
+  const rec = rd.holes[i], g = c.holes[i].green || {}, pin = pinOf(g, rec.pin);
+  review = { hi, i };
+  closeSheet(); drawLayers();
+  fitTrack([...rec.shots.map(s => s.p), ...(pin ? [pin] : [])]);
+  const legs = rec.shots.slice(1).map((s, k) => `${k + 1}샷 <b>${fmt(haversine(rec.shots[k].p, s.p))}</b>`).join(' → ');
+  const diff = rec.strokes ? rec.strokes - c.holes[i].par : null;
+  let p = document.getElementById('reviewBar');
+  if (!p) { p = document.createElement('div'); p.id = 'reviewBar'; document.body.appendChild(p); }
+  p.innerHTML = `<b>${i + 1}번홀 · Par ${c.holes[i].par}</b> · ${rec.strokes || '-'}타${diff == null ? '' : ` (${diff > 0 ? '+' : ''}${diff})`} · ${rec.putts}퍼트
+    <div style="margin:4px 0">${legs ? legs + ` <span class="muted">(${unitLbl()})</span>` : '<span class="muted">기록된 샷 위치가 없습니다</span>'}</div>
+    <div class="row" style="margin:0"><button data-rv="prev">◀ 이전 홀</button><button data-rv="next">다음 홀 ▶</button><button data-rv="card">스코어카드</button><button data-rv="close">닫기</button></div>`;
+  p.style.display = 'block';
+}
+function closeReview() {
+  review = null;
+  const p = document.getElementById('reviewBar'); if (p) p.style.display = 'none';
+  drawLayers(); if (course()) fitHole();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-rv]'); if (!b || !review) return;
+  const { hi, i } = review, a = b.dataset.rv;
+  if (a === 'prev' || a === 'next') showHoleTrack(hi, (i + (a === 'next' ? 1 : 17)) % 18);
+  else if (a === 'card') { closeReview(); showCard(store.history[hi], store.history[hi].courseSnapshot, hi); }
+  else closeReview();
+});
+
+function drawLayers() {
+  layers.clearLayers();
+  if (review) {
+    const rd = store.history[review.hi], rec = rd.holes[review.i], g = rd.courseSnapshot.holes[review.i].green;
+    drawHole(g, pinOf(g, rec.pin), rec.shots); return;
   }
+  const h = holeDef(); if (!h) return;
+  const pin = pinPoint();
+  const shots = holeRec().shots;
+  drawHole(h.green, pin, shots);
   if (measure) {
     const ref = me || (shots.length ? shots[shots.length - 1].p : null);
     const lines = [];
@@ -389,7 +437,7 @@ function fitHole() {
   if (h && h.green) ['f', 'c', 'b'].forEach(k => h.green[k] && pts.push(h.green[k]));
   if (h && h.tee) pts.push(h.tee);
   const shots = holeRec() ? holeRec().shots : [];
-  if (shots.length) pts.push(shots[0].p);
+  shots.forEach(s => pts.push(s.p));   // 지금까지 친 궤적 전체가 보이게
   const ctr = course() && course().center;
   if (!pts.length && ctr && (!me || haversine(me, ctr) > 3000)) { map.setView(ctr, 16); return; }
   if (me && (!pts.length || haversine(me, pts[0]) < 800)) pts.push(me);
@@ -469,8 +517,10 @@ document.getElementById('shotBtn').addEventListener('click', async () => {
   const prev = r.shots[r.shots.length - 1].p;
   r.shots.push({ p: s.p, acc: s.acc, t: Date.now() });
   autoStrokes(r); save(); render();
-  const pin = pinPoint();
+  const pin = pinPoint(), g = holeDef().green;
   toast(`${r.shots.length - 1}샷 ${fmt(haversine(prev, s.p))}${unitLbl()} 날아감` + (pin ? ` · 핀까지 남은 ${fmt(haversine(s.p, pin))}${unitLbl()}` : ''), 3500);
+  // 온그린 지점을 기록하면 티부터 그린까지 날아온 궤적 전체를 지도에 맞춰 보여 줌
+  if (g && g.c && haversine(s.p, g.c) <= greenRadius(g)) fitTrack([...r.shots.map(x => x.p), ...(pin ? [pin] : [])]);
 });
 document.getElementById('undoBtn').addEventListener('click', () => {
   const r = holeRec(); if (!r || !r.shots.length) return;
@@ -544,6 +594,7 @@ async function showInstall() {
 }
 
 function openMenu() {
+  if (review) closeReview();
   const rd = round();
   openSheet(`<h3>메뉴</h3><div class="list">
     ${rd ? `<button data-act="card">📋 스코어카드</button>
@@ -593,7 +644,8 @@ box.addEventListener('click', e => {
   else if (a === 'play') startRound(id);
   else if (a === 'edit') editCourse(id);
   else if (a === 'delCourse') { if (confirm('코스를 삭제할까요?')) { delete store.courses[id]; save(); manageCourses(); } }
-  else if (a === 'histCard') { const h = store.history[+id]; showCard(h, h.courseSnapshot); }
+  else if (a === 'histCard') { const h = store.history[+id]; showCard(h, h.courseSnapshot, +id); }
+  else if (a === 'histHole') showHoleTrack(+id, +t.dataset.k);
   else if (a === 'export') exportData();
   else if (a === 'import') document.getElementById('importFile').click();
 });
@@ -908,7 +960,7 @@ function editCourse(id) {
       <button data-act="courses">← 코스 목록</button></div>`);
 }
 
-function showCard(rd, c) {
+function showCard(rd, c, hi) {   // hi: 지난 라운드 인덱스(있으면 홀을 눌러 궤적 다시보기)
   if (!rd || !c) return;
   const row = (from, to, label) => {
     let par = 0, st = 0, pt = 0, cells = '';
@@ -916,7 +968,7 @@ function showCard(rd, c) {
       const p = c.holes[i].par, h = rd.holes[i];
       par += p; st += h.strokes; pt += h.putts;
       const diff = h.strokes ? h.strokes - p : null;
-      cells += `<tr ${rd === round() ? `data-act="goto" data-id="${i}" style="cursor:pointer"` : ''}><td>${i + 1}</td><td>${p}</td><td class="${diff < 0 ? 'under' : diff > 0 ? 'over' : ''}">${h.strokes || ''}</td>
+      cells += `<tr ${rd === round() ? `data-act="goto" data-id="${i}" style="cursor:pointer"` : hi != null && h.shots.length ? `data-act="histHole" data-id="${hi}" data-k="${i}" style="cursor:pointer"` : ''}><td>${i + 1}</td><td>${p}</td><td class="${diff < 0 ? 'under' : diff > 0 ? 'over' : ''}">${h.strokes || ''}</td>
         <td>${h.putts || ''}</td><td>${diff == null ? '' : diff > 0 ? '+' + diff : diff}</td><td>${longest(h.shots)}</td></tr>`;
     }
     return { html: cells + `<tr class="sum"><td>${label}</td><td>${par}</td><td>${st || ''}</td><td>${pt || ''}</td><td></td><td></td></tr>`, par, st, pt };
@@ -928,7 +980,7 @@ function showCard(rd, c) {
   openSheet(`<h3>스코어카드 · ${esc(c.name)}</h3><p class="muted">${new Date(rd.date).toLocaleString('ko-KR')}</p>
     <table class="card"><tr><th>홀</th><th>Par</th><th>타수</th><th>퍼트</th><th>±</th><th>최장샷</th></tr>${o.html}${n.html}
     <tr class="sum"><td>합계</td><td>${o.par + n.par}</td><td>${tot || ''}</td><td>${o.pt + n.pt || ''}</td><td>${played.length ? (diff > 0 ? '+' : '') + diff : ''}</td><td></td></tr></table>
-    <p class="muted">최장샷 단위: ${unitLbl()} (기록된 샷 위치 기준)${rd === round() ? ' · 홀을 누르면 그 홀로 이동해 타수·퍼트를 고칠 수 있습니다' : ''}</p>
+    <p class="muted">최장샷 단위: ${unitLbl()} (기록된 샷 위치 기준)${rd === round() ? ' · 홀을 누르면 그 홀로 이동해 타수·퍼트를 고칠 수 있습니다' : hi != null ? ' · 🗺️ 홀을 누르면 지도에서 샷 궤적·거리를 봅니다' : ''}</p>
     <div class="list"><button data-act="close">닫기</button></div>`);
 }
 function longest(shots) {
@@ -1005,6 +1057,6 @@ startGps(); keepAwake(); render(); fitHole();
 if (!round()) setTimeout(openMenu, 400);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="auth.js?v=13"></script>
+<script src="auth.js?v=14"></script>
 </body>
 </html>

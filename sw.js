@@ -1,9 +1,9 @@
 'use strict';
 
 // 앱 화면은 네트워크 우선(업데이트 반영), 끊기면 캐시로 동작. 위성지도 타일은 본 것만 캐시.
-const CACHE = 'golf-rf-v13';
+const CACHE = 'golf-rf-v14';
 const SHELL = [
-  './', './index.html', './osm.js?v=13', './auth.js?v=13', './manifest.json', './icon.svg',
+  './', './index.html', './osm.js?v=14', './auth.js?v=14', './manifest.json', './icon.svg',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
