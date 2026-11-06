@@ -163,7 +163,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="osm.js?v=16"></script>
+<script src="osm.js?v=17"></script>
 <script>
 'use strict';
 
@@ -938,8 +938,10 @@ function recentCourseIds() {   // 최근 라운드한 코스 먼저, 나머지�
 }
 function openHome() {
   if (review) closeReview();
-  const rd = round(), ids = recentCourseIds();
-  openSheet(`<h3>⛳ ${rd ? '다른 골프장으로 새 라운드' : '오늘 라운딩할 골프장'}</h3>
+  const rd = round(), ids = recentCourseIds(), stale = roundIsStale();
+  openSheet(`<h3>⛳ ${rd && !stale ? '다른 골프장으로 새 라운드' : '오늘 라운딩할 골프장'}</h3>
+    ${rd && course() ? `<div class="list"><button data-act="close">↩ ${stale ? '지난' : '진행 중'} 라운드 이어서 보기 <span class="muted">· ${esc(course().name)} ${holeIdx() + 1}번홀</span></button></div>
+      ${stale ? '<p class="muted" style="margin:0">지난 라운드는 새 라운드를 시작하면 자동으로 「지난 라운드」에 저장됩니다.</p>' : ''}` : ''}
     <div class="row"><input type="text" id="homeQ" placeholder="골프장 이름 입력 (예: 레이크사이드)" enterkeyhint="search" autocomplete="off"></div>
     <div id="homeOut"></div>
     ${ids.length ? `<p class="muted" style="margin:10px 0 0">최근 코스 — 누르면 바로 시작</p><div class="list">${ids.map(id =>
@@ -1000,7 +1002,16 @@ function quickStart(i, fk, bk) {
   if (round() && round().courseId === id && greenCount(id)) toast(`⛳ ${store.courses[id].name} — 1번홀부터 시작합니다`, 2500);
 }
 function greenCount(id) { return store.courses[id].holes.filter(h => h.green && h.green.c).length; }
+// 오늘 이전에 시작한 라운드(종료를 깜빡한 경우) — 앱을 열면 첫 화면을 보여 주고, 새 라운드 시작 시 자동 저장
+function roundIsStale() { return !!round() && new Date(round().date).toDateString() !== new Date().toDateString(); }
+function archiveStaleRound() {
+  const rd = round(), played = rd.holes.some(h => h.strokes || h.putts || h.shots.length);
+  if (played && course()) store.history.unshift({ ...rd, courseSnapshot: JSON.parse(JSON.stringify(course())) });
+  store.round = null; save(); layers.clearLayers();
+  if (played) toast('지난 라운드를 「지난 라운드」에 저장했습니다', 2500);
+}
 function startRound(id) {
+  if (roundIsStale()) archiveStaleRound();
   if (round() && !confirm('진행 중인 라운드를 저장하지 않고 새로 시작할까요? (저장하려면 먼저 「라운드 종료」)')) return;
   store.round = { courseId: id, date: new Date().toISOString(), hole: 0,
     holes: Array.from({ length: 18 }, () => ({ strokes: 0, putts: 0, pin: 50, shots: [] })) };
@@ -1128,9 +1139,9 @@ document.addEventListener('visibilitychange', keepAwake);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 startGps(); keepAwake(); render(); fitHole();
-if (!round()) setTimeout(() => { if (!round() && !sheet.classList.contains('show')) openHome(); }, 400);
+if (!round() || roundIsStale()) setTimeout(() => { if ((!round() || roundIsStale()) && !sheet.classList.contains('show')) openHome(); }, 400);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="auth.js?v=16"></script>
+<script src="auth.js?v=17"></script>
 </body>
 </html>

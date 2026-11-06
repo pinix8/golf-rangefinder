@@ -1,9 +1,9 @@
 'use strict';
 
 // 앱 화면은 네트워크 우선(업데이트 반영), 끊기면 캐시로 동작. 위성지도 타일은 본 것만 캐시.
-const CACHE = 'golf-rf-v16';
+const CACHE = 'golf-rf-v17';
 const SHELL = [
-  './', './index.html', './osm.js?v=16', './auth.js?v=16', './manifest.json', './icon.svg',
+  './', './index.html', './osm.js?v=17', './auth.js?v=17', './manifest.json', './icon.svg',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
@@ -31,7 +31,8 @@ self.addEventListener('fetch', e => {
     })));
     return;
   }
-  e.respondWith(fetch(req).then(res => {
+  // no-cache: GitHub Pages의 10분 HTTP 캐시를 거치지 않고 서버에 새 버전 확인(변경 없으면 304로 가볍게)
+  e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
     const copy = res.clone();
     caches.open(CACHE).then(c => c.put(req, copy));
     return res;
