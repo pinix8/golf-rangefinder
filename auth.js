@@ -39,11 +39,26 @@
     const { data, error } = await sb.rpc('member_status', { n: name });
     if (error) return gateName('서버에 연결하지 못했습니다. 인터넷 연결을 확인하세요');
     if (!data) return gateName(`「${name}」은(는) 등록되지 않은 이름입니다. 관리자에게 등록을 요청하세요`);
-    gatePw(name, data === 'new');
+    if (data !== 'new') return gatePw(name, false);
+    const st = await requestCode(name, false);
+    gatePw(name, true, st === 'error' ? '가입 코드 요청에 실패했습니다. 「코드 다시 요청」을 누르세요' : '', st !== 'legacy');
   }
-  function gatePw(name, isNew, msg) {
+  // 가입 코드: 서버가 6자리 코드를 만들고 Edge Function이 관리자 카톡으로 발송 → 관리자가 회원에게 알려 줌
+  // 반환: 'sent' | 'exists' | 'wait' | 'invalid' | 'error' | 'legacy'(서버에 가입 코드 기능이 아직 없음)
+  async function requestCode(name, again) {
+    const { data, error } = await sb.rpc('request_signup_code', { n: name, again });
+    if (error) return /request_signup_code|function|schema cache/i.test(error.message) ? 'legacy' : 'error';
+    if (data === 'sent') {
+      fetch(SB_URL + '/functions/v1/kakao-notify', { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
+        body: JSON.stringify({ name }) }).catch(() => {});   // 카톡 실패해도 관리자 화면에서 코드 확인 가능
+    }
+    return data;
+  }
+  function gatePw(name, isNew, msg, needCode) {
     card(`<p><b>${esc(name)}</b>님 ${isNew ? '처음 오셨네요. 사용할 비밀번호를 정하세요 (6자 이상)' : '비밀번호를 입력하세요'}</p>
       ${field('gPw', '비밀번호', 'password')}${isNew ? field('gPw2', '비밀번호 확인 (한 번 더)', 'password') : ''}
+      ${needCode ? `<p style="font-size:14px;margin:8px 0 0">🔑 <b>가입 코드</b> — 관리자(양태욱)에게 카톡으로 전송되었습니다. 관리자에게 6자리 코드를 받아 입력하세요.</p>
+        ${field('gCode', '가입 코드 6자리')}<button id="gAgain" style="width:100%;margin:2px 0 6px">코드 다시 요청</button>` : ''}
       <label style="display:block;margin:4px 0;font-size:14px"><input type="checkbox" id="gShow"> 비밀번호 보이기</label>
       <p class="muted" id="gCount"></p><div id="gMsg">${msgHtml(msg)}</div>
       <button class="primary" id="gGo" style="width:100%;margin-top:6px">${isNew ? '비밀번호 설정하고 시작' : '로그인'}</button>
@@ -58,7 +73,17 @@
     document.getElementById('gShow').onchange = e => [pw, pw2].filter(Boolean).forEach(i => { i.type = e.target.checked ? 'text' : 'password'; });
     // Enter(휴대폰 「이동」): 첫 칸에서는 확인 칸으로 이동, 마지막 칸에서 제출
     pw.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (pw2) pw2.focus(); else go(); } });
-    if (pw2) pw2.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    const codeIn = document.getElementById('gCode');
+    if (codeIn) { codeIn.inputMode = 'numeric'; codeIn.maxLength = 6; codeIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } }); }
+    if (pw2) pw2.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (codeIn) codeIn.focus(); else go(); } });
+    const again = document.getElementById('gAgain');
+    if (again) again.onclick = async () => {
+      again.disabled = true;
+      const st = await requestCode(name, true);
+      again.disabled = false;
+      say(st === 'sent' ? '새 코드를 관리자에게 보냈습니다. 이전 코드는 더 이상 쓸 수 없습니다'
+        : st === 'wait' ? '방금 요청했습니다. 1분 뒤에 다시 시도하세요' : '코드 요청에 실패했습니다. 잠시 후 다시 시도하세요');
+    };
     document.getElementById('gBack').onclick = () => gateName();
     goBtn.onclick = go;
     setTimeout(() => pw.focus(), 50);
@@ -67,12 +92,15 @@
       if (p.length < 6) return say(`비밀번호는 6자 이상이어야 합니다 (지금 ${p.length}자)`);
       if (pw2 && !pw2.value) { pw2.focus(); return say('아래 「비밀번호 확인」 칸에 같은 비밀번호를 한 번 더 입력하세요'); }
       if (pw2 && p !== pw2.value) return say('두 칸의 비밀번호가 다릅니다. 「비밀번호 보이기」로 확인해 보세요');
+      const code = codeIn ? codeIn.value.replace(/\D/g, '') : '';
+      if (codeIn && code.length !== 6) { codeIn.focus(); return say('관리자에게 받은 가입 코드 6자리를 입력하세요'); }
       goBtn.disabled = true; say('');
-      const res = isNew ? await sb.auth.signUp({ email: emailOf(name), password: p })
+      const res = isNew ? await sb.auth.signUp({ email: emailOf(name), password: p, options: code ? { data: { code } } : undefined })
         : await sb.auth.signInWithPassword({ email: emailOf(name), password: p });
       goBtn.disabled = false;
       if (res.error) {
-        return say(/invalid login/i.test(res.error.message) ? '비밀번호가 틀렸습니다'
+        return say(/가입 코드/.test(res.error.message) ? '가입 코드가 틀렸거나 만료되었습니다. 관리자에게 받은 코드를 확인하세요'
+          : /invalid login/i.test(res.error.message) ? '비밀번호가 틀렸습니다'
           : /database error|등록되지|이미 비밀번호/i.test(res.error.message) ? '등록되지 않았거나 이미 비밀번호가 설정된 이름입니다'
           : /password/i.test(res.error.message) ? '서버가 이 비밀번호를 거부했습니다: ' + res.error.message : res.error.message);
       }
@@ -132,9 +160,14 @@
     openSheet('<h3>👑 관리자</h3><p>불러오는 중…</p>');
     const { data, error } = await sb.from('members').select('name,role,user_id').order('name');
     if (error) return openSheet(`<h3>👑 관리자</h3><p>${esc(error.message)}</p><div class="list"><button data-act="close">닫기</button></div>`);
+    // 가입 대기 코드(카톡이 안 왔을 때 여기서 확인) — 서버에 기능이 없으면 조용히 생략
+    const codes = {};
+    const cr = await sb.from('signup_codes').select('name,code,expires_at,notified_at');
+    if (!cr.error) cr.data.forEach(c => { if (Date.parse(c.expires_at) > Date.now()) codes[c.name] = c; });
+    const codeTxt = c => c ? ` · 🔑 가입 코드 <b>${esc(c.code)}</b>${c.notified_at ? ' (카톡 발송됨)' : ' (카톡 미발송)'}` : '';
     openSheet(`<h3>👑 관리자 — 회원 ${data.length}명</h3>
       <div class="row"><input type="text" id="auNew" placeholder="등록할 이름"><button data-act="au-add" class="primary" style="flex:0 0 auto">등록</button></div>
-      ${data.map(m => `<div class="row"><span>${esc(m.name)} ${m.role === 'admin' ? '👑' : ''}<br><span class="muted">${m.user_id ? '사용 중' : '비밀번호 설정 대기'}</span></span>
+      ${data.map(m => `<div class="row"><span>${esc(m.name)} ${m.role === 'admin' ? '👑' : ''}<br><span class="muted">${m.user_id ? '사용 중' : '비밀번호 설정 대기' + codeTxt(codes[m.name])}</span></span>
         ${m.user_id ? `<button data-act="au-reset" data-name="${esc(m.name)}" style="flex:0 0 auto">비번 초기화</button>` : ''}
         ${m.role === 'admin' ? '' : `<button data-act="au-del" data-name="${esc(m.name)}" style="flex:0 0 auto">삭제</button>`}</div>`).join('')}
       <h3>골프장 파 DB — ${PAR_DB.length}곳</h3>
