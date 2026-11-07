@@ -163,13 +163,13 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="osm.js?v=20"></script>
+<script src="osm.js?v=21"></script>
 <script>
 'use strict';
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v20';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v21';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -662,6 +662,11 @@ box.addEventListener('click', e => {
   else if (a === 'edit') editCourse(id);
   else if (a === 'delCourse') { if (confirm('코스를 삭제할까요?')) { delete store.courses[id]; save(); manageCourses(); } }
   else if (a === 'histCard') { const h = store.history[+id]; showCard(h, h.courseSnapshot, +id); }
+  else if (a === 'betDel') { const h = store.history[+id]; if (h && confirm('이 라운드의 내기 게임 기록(오장·업다운)만 지울까요?\n스코어·샷 궤적은 그대로 남습니다.')) { dropBet(h); save(); showCard(h, h.courseSnapshot, +id); toast('내기 기록을 지웠습니다'); } }
+  else if (a === 'betDelAll') { const n = store.history.filter(hasBet).length; if (confirm(`${n}개 라운드의 내기 게임 기록을 모두 지울까요?
+스코어·샷 궤적은 그대로 남습니다.`)) { store.history.forEach(dropBet); save(); showHistory(); toast('내기 기록을 모두 지웠습니다'); } }
+  else if (a === 'histDel') { const h = store.history[+id]; if (h && confirm(`${new Date(h.date).toLocaleDateString('ko-KR')} ${h.courseSnapshot.name} 라운드를 통째로 삭제할까요?
+스코어·샷 궤적·내기 기록이 모두 지워지고 되살릴 수 없습니다.`)) { store.history.splice(+id, 1); save(); showHistory(); toast('라운드를 삭제했습니다'); } }
   else if (a === 'histHole') showHoleTrack(+id, +t.dataset.k);
   else if (a === 'export') exportData();
   else if (a === 'import') document.getElementById('importFile').click();
@@ -1088,7 +1093,7 @@ function showCard(rd, c, hi) {   // hi: 지난 라운드 인덱스(있으면 홀
     <table class="card"><tr><th>홀</th><th>Par</th><th>타수</th><th>퍼트</th><th>±</th><th>최장샷</th></tr>${o.html}${n.html}
     <tr class="sum"><td>합계</td><td>${o.par + n.par}</td><td>${tot || ''}</td><td>${o.pt + n.pt || ''}</td><td>${played.length ? (diff > 0 ? '+' : '') + diff : ''}</td><td></td></tr></table>
     <p class="muted">최장샷 단위: ${unitLbl()} (기록된 샷 위치 기준)${rd === round() ? ' · 홀을 누르면 그 홀로 이동해 타수·퍼트를 고칠 수 있습니다' : hi != null ? ' · 🗺️ 홀을 누르면 지도에서 샷 궤적·거리를 봅니다' : ''}</p>
-    <div class="list">${rd.game ? (hi != null ? `<button data-g="histTbl" data-i="${hi}">🎲 오장게임 정산표</button>` : '<button data-act="ojang">🎲 오장게임</button>') : ''}${rd.updown ? (hi != null ? `<button data-ud="hist" data-i="${hi}">🤝 팀 업다운 결과</button>` : '<button data-act="updown">🤝 팀 업다운</button>') : ''}<button data-act="close">닫기</button></div>`);
+    <div class="list">${rd.game ? (hi != null ? `<button data-g="histTbl" data-i="${hi}">🎲 오장게임 정산표</button>` : '<button data-act="ojang">🎲 오장게임</button>') : ''}${rd.updown ? (hi != null ? `<button data-ud="hist" data-i="${hi}">🤝 팀 업다운 결과</button>` : '<button data-act="updown">🤝 팀 업다운</button>') : ''}${hi != null ? `${hasBet(rd) ? `<button data-act="betDel" data-id="${hi}">🎲 내기 기록만 지우기 <span class="muted">· 스코어·샷은 유지</span></button>` : ''}<button data-act="history">← 지난 라운드 목록</button><button data-act="histDel" data-id="${hi}">🗑️ 이 라운드 전체 삭제</button>` : ''}<button data-act="close">닫기</button></div>`);
 }
 function longest(shots) {
   let m = 0;
@@ -1124,13 +1129,18 @@ function discardRound() {
 버린 기록은 되살릴 수 없습니다.`)) return;
   endRoundDone(roundPlayed(rd) ? '기록을 버리고 라운드를 끝냈습니다' : '라운드를 끝냈습니다');
 }
+// 내기 게임(오장·업다운)은 그날 정산용 → 라운드 기록(스코어·샷 궤적)과 따로 지움
+const hasBet = h => !!(h.game || h.updown);
+function dropBet(h) { delete h.game; delete h.updown; }
 function showHistory() {
   openSheet(`<h3>지난 라운드</h3><div class="list">
     ${store.history.map((h, i) => {
       const tot = h.holes.reduce((s, x) => s + x.strokes, 0), pt = h.holes.reduce((s, x) => s + x.putts, 0), n = playedHoles(h);
-      return `<button data-act="histCard" data-id="${i}">${new Date(h.date).toLocaleDateString('ko-KR')} · ${esc(h.courseSnapshot.name)} · ${tot}타 / ${pt}퍼트${n < 18 ? ` <span class="muted">· ${n}홀</span>` : ''}</button>`;
+      return `<button data-act="histCard" data-id="${i}">${new Date(h.date).toLocaleDateString('ko-KR')} · ${esc(h.courseSnapshot.name)} · ${tot}타 / ${pt}퍼트${n < 18 ? ` <span class="muted">· ${n}홀</span>` : ''}${h.game ? ' 🎲' : ''}${h.updown ? ' 🤝' : ''}</button>`;
     }).join('') || '<p class="muted">저장된 라운드가 없습니다.</p>'}
-    <button data-act="close">닫기</button></div>`);
+    ${store.history.some(hasBet) ? '<button data-act="betDelAll">🎲 내기 게임 기록 모두 지우기 <span class="muted">· 스코어·샷 기록은 그대로</span></button>' : ''}
+    <button data-act="close">닫기</button></div>
+    <p class="muted">🎲 오장게임 · 🤝 팀 업다운 기록이 있는 라운드. 내기 기록은 그날 정산용이라 따로 지울 수 있고, 스코어·샷 궤적은 라운드를 삭제하기 전까지 남습니다.</p>`);
 }
 function showBackup() {
   openSheet(`<h3>데이터 백업/복원</h3>
@@ -1186,9 +1196,9 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 startGps(); keepAwake(); render(); fitHole();
 if (!round() || roundIsStale()) setTimeout(() => { if ((!round() || roundIsStale()) && !sheet.classList.contains('show')) openHome(); }, 400);
 </script>
-<script src="ojang.js?v=20"></script>
-<script src="updown.js?v=20"></script>
+<script src="ojang.js?v=21"></script>
+<script src="updown.js?v=21"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="auth.js?v=20"></script>
+<script src="auth.js?v=21"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ const OJ_PRESETS = [[1000, 2000, '1천 / 2천'], [5000, 10000, '5천 / 1만'], [
 const OJ_MULTS = [1, 2, 3, 4, 5];
 let ojCur = 0;   // 게임 화면에서 보고 있는 홀
 
+// 오장게임 타수는 기본 화면의 내 타수와 별개 (오장게임만 쓰는 경우도 있음 — 2026-11-07 사용자 결정)
 const ojBlankHole = () => ({ s: Array(OJ_N).fill(null), near: null, e: Array(OJ_N).fill(null) });
 function ojNewGame(opt) {
   return { ...JSON.parse(JSON.stringify(OJ_DEFAULT)), ...opt, holes: Array.from({ length: 18 }, ojBlankHole) };
@@ -114,7 +115,6 @@ function ojSaveSetup() {
 
 function ojHole() {
   const rd = round(), g = rd.game, c = course(), i = ojCur, par = c.holes[i].par, h = g.holes[i];
-  if (!h.s[0] && rd.holes[i].strokes) { h.s[0] = rd.holes[i].strokes; save(); }   // 1번 플레이어 = 내 스코어 입력값으로 미리 채움
   const all = ojCalc(g, ojPars(c)), r = all.holes[i];
   const sp = i > 0 ? +g.special[i] || 1 : 1;
   const tag = [g.tieNext && i > 0 && ojAllTied(g.holes[i - 1].s) ? '앞 홀 모두 동타 → 배판' : '', g.force && g.force[i] ? '배판 지정홀' : '', sp > 1 ? `판 ×${sp}` : ''].filter(Boolean).join(' · ');
