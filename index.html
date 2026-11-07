@@ -163,13 +163,13 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="osm.js?v=19"></script>
+<script src="osm.js?v=20"></script>
 <script>
 'use strict';
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v19';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v20';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -605,6 +605,8 @@ function openMenu() {
   const rd = round();
   openSheet(`<h3>메뉴</h3><div class="list">
     ${rd ? `<button data-act="card">📋 스코어카드</button>
+            <button data-act="ojang">🎲 오장게임 ${rd.game ? '(진행 중 — 이어서)' : '(4인 타당 정산)'}</button>
+            <button data-act="updown">🤝 팀 업다운 ${rd.updown ? '(진행 중 — 이어서)' : '(2팀 매홀 승부)'}</button>
             <button data-act="setup">📍 ${holeIdx() + 1}번홀 그린·티 위치 설정</button>
             <button data-act="finish">🏁 라운드 종료 (저장 / 기록 버리기)</button>` : ''}
     <button data-act="start">⛳ ${rd ? '다른 코스로 새 라운드' : '라운드 시작 (코스 선택)'}</button>
@@ -624,6 +626,8 @@ box.addEventListener('click', e => {
   if (a === 'close') closeSheet();
   else if (a === 'install') showInstall();
   else if (a === 'card') showCard(round(), course());
+  else if (a === 'ojang') ojOpen();
+  else if (a === 'updown') udOpen();
   else if (a === 'setup') { closeSheet(); enterSetup('c'); }
   else if (a === 'finish') endRoundSheet();
   else if (a === 'finishSave') finishRound();
@@ -1084,7 +1088,7 @@ function showCard(rd, c, hi) {   // hi: 지난 라운드 인덱스(있으면 홀
     <table class="card"><tr><th>홀</th><th>Par</th><th>타수</th><th>퍼트</th><th>±</th><th>최장샷</th></tr>${o.html}${n.html}
     <tr class="sum"><td>합계</td><td>${o.par + n.par}</td><td>${tot || ''}</td><td>${o.pt + n.pt || ''}</td><td>${played.length ? (diff > 0 ? '+' : '') + diff : ''}</td><td></td></tr></table>
     <p class="muted">최장샷 단위: ${unitLbl()} (기록된 샷 위치 기준)${rd === round() ? ' · 홀을 누르면 그 홀로 이동해 타수·퍼트를 고칠 수 있습니다' : hi != null ? ' · 🗺️ 홀을 누르면 지도에서 샷 궤적·거리를 봅니다' : ''}</p>
-    <div class="list"><button data-act="close">닫기</button></div>`);
+    <div class="list">${rd.game ? (hi != null ? `<button data-g="histTbl" data-i="${hi}">🎲 오장게임 정산표</button>` : '<button data-act="ojang">🎲 오장게임</button>') : ''}${rd.updown ? (hi != null ? `<button data-ud="hist" data-i="${hi}">🤝 팀 업다운 결과</button>` : '<button data-act="updown">🤝 팀 업다운</button>') : ''}<button data-act="close">닫기</button></div>`);
 }
 function longest(shots) {
   let m = 0;
@@ -1182,7 +1186,9 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 startGps(); keepAwake(); render(); fitHole();
 if (!round() || roundIsStale()) setTimeout(() => { if ((!round() || roundIsStale()) && !sheet.classList.contains('show')) openHome(); }, 400);
 </script>
+<script src="ojang.js?v=20"></script>
+<script src="updown.js?v=20"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="auth.js?v=19"></script>
+<script src="auth.js?v=20"></script>
 </body>
 </html>
