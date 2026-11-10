@@ -127,6 +127,7 @@
   <div class="banner" id="banner" style="display:none"></div>
   <button class="fab" id="centerBtn" style="top:10px">◎ 내 위치</button>
   <button class="fab" id="fitBtn" style="top:50px">⛳ 홀 보기</button>
+  <button class="fab" id="endBtn" style="top:90px;display:none">🏁 끝내기</button>
 </div>
 
 <div id="panel">
@@ -172,7 +173,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v25';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v28';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -290,6 +291,28 @@ function stablePosition() {
   });
 }
 
+// ---------- 오류 표시 — 조용히 실패하지 않게 (캡처해서 알려 달라고 안내) ----------
+let lastErr = 0;
+function reportError(e) {
+  const msg = (e && (e.message || e.reason && e.reason.message)) || String(e);
+  if (Date.now() - lastErr < 3000) return; lastErr = Date.now();
+  try { toast(`⚠️ 앱 오류: ${msg} — 이 화면을 캡처해 관리자에게 보내 주세요 (${APP_VER})`, 8000); } catch (x) { /* 무시 */ }
+}
+window.addEventListener('error', e => reportError(e.error || e.message));
+window.addEventListener('unhandledrejection', e => reportError(e.reason));
+// 예전 버전에서 저장된 라운드에 빠진·잘못된 값이 있으면 고침 (숫자 아님·샷 목록 없음·홀 번호 범위 밖)
+function repairRound() {
+  const rd = store.round; if (!rd) return;
+  if (!Array.isArray(rd.holes)) rd.holes = [];
+  for (let i = 0; i < 18; i++) {
+    const h = rd.holes[i] = rd.holes[i] && typeof rd.holes[i] === 'object' ? rd.holes[i] : {};
+    h.strokes = Math.max(0, parseInt(h.strokes, 10) || 0); h.putts = Math.max(0, parseInt(h.putts, 10) || 0);
+    h.pin = isFinite(+h.pin) && h.pin !== null ? +h.pin : 50;
+    if (!Array.isArray(h.shots)) h.shots = [];
+  }
+  rd.hole = Math.min(17, Math.max(0, parseInt(rd.hole, 10) || 0));
+}
+
 // ---------- 화면 갱신 ----------
 function render() {
   const $ = id => document.getElementById(id);
@@ -298,9 +321,14 @@ function render() {
     $('holeTitle').innerHTML = '<b>골프 거리측정</b><small>☰ 메뉴에서 코스를 선택하세요</small>';
     ['dPin', 'dF', 'dC', 'dB', 'dHole', 'dLast'].forEach(id => { $(id).textContent = '—'; });
     $('strokes').textContent = 0; $('putts').textContent = 0; $('shotList').textContent = '';
-    $('lastShot').style.display = 'none';
+    $('lastShot').style.display = 'none'; $('endBtn').style.display = 'none';
     return;
   }
+  $('strokes').textContent = r.strokes; $('putts').textContent = r.putts;   // 아래에서 오류가 나도 입력한 숫자는 보이게
+  $('endBtn').style.display = '';
+  try { renderHole($, c, h, r); } catch (e) { reportError(e); }
+}
+function renderHole($, c, h, r) {
   $('holeTitle').innerHTML = `<b>${holeIdx() + 1}번홀 · Par ${h.par} <span style="font-size:13px;opacity:.6">✎</span></b><small>${esc(c.name)}${canSwapNines(c) && !c.name.includes('→') ? ` · ${esc(c.nines[0])} 출발` : ''}</small>`;
   const g = h.green || {};
   const pin = pinPoint();
@@ -598,7 +626,7 @@ document.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', (
   if (!needRound()) return;
   const r = holeRec(), k = b.dataset.c;
   if (navigator.vibrate) navigator.vibrate(10);
-  r[k] = Math.max(0, r[k] + (+b.dataset.d));
+  r[k] = Math.max(0, (parseInt(r[k], 10) || 0) + (+b.dataset.d));
   if (k === 'strokes') r.manual = true;          // 타수를 직접 바꾸면 자동 계산 중지 (OB·벌타 등)
   else autoStrokes(r);
   if (k === 'putts' && r.putts > r.strokes) r.strokes = r.putts;
@@ -652,10 +680,41 @@ function goHole(d, auto) {
   save(); render(); fitHole(); showBanner();
   if (!auto && !(holeDef().green && holeDef().green.c)) toast('이 홀의 그린 위치가 없습니다. ☰ → 그린 위치 설정', 2500);
 }
-document.getElementById('prevHole').addEventListener('click', () => goHole(-1));
-document.getElementById('nextHole').addEventListener('click', () => goHole(1));
+function swipeTip() {   // ◀▶ 버튼을 처음 쓸 때 한 번만: 쓸어 넘기기도 된다고 안내
+  if (store.swipeTip) return;
+  setTimeout(() => {   // 다른 안내(그린 미등록·자동 넘김 등)가 떠 있으면 덮지 않고 다음 기회에
+    if (store.swipeTip || document.getElementById('toast').style.display === 'block') return;
+    store.swipeTip = 1; save();
+    toast('💡 아래 거리·타수 화면을 좌우로 쓸어도 홀이 넘어갑니다 (← 다음 홀 · → 이전 홀)', 4000);
+  }, 2600);
+}
+document.getElementById('prevHole').addEventListener('click', () => { goHole(-1); swipeTip(); });
+document.getElementById('nextHole').addEventListener('click', () => { goHole(1); swipeTip(); });
+// 좌우로 쓸어 홀 넘기기 — 아래 패널·위 헤더에서 (지도는 끌어서 이동하므로 제외, 핀 슬라이더·샷 목록에서 시작한 쓸기도 제외)
+// 손가락을 왼쪽으로 = 다음 홀, 오른쪽으로 = 이전 홀. 직접 이동이므로 GPS 자동 넘김은 잠시 멈춤
+let swipe = null;
+function swipeStart(e) {
+  const t = e.changedTouches && e.changedTouches[0];
+  swipe = t && !e.target.closest('input[type=range], .shots') ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+}
+function swipeEnd(e) {
+  const t = e.changedTouches && e.changedTouches[0], s0 = swipe; swipe = null;
+  if (!t || !s0 || !round() || review || setup) return;
+  const dx = t.clientX - s0.x, dy = t.clientY - s0.y;
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - s0.at > 800) return;
+  store.swipeTip = 1;
+  goHole(dx < 0 ? 1 : -1);
+  if (navigator.vibrate) navigator.vibrate(15);
+  toast(`${dx < 0 ? '▶' : '◀'} ${holeIdx() + 1}번홀 · Par ${holeDef().par}`, 1200);
+}
+['panel', 'holeTitle'].forEach(id => {
+  const el = id === 'holeTitle' ? document.querySelector('header') : document.getElementById(id);
+  el.addEventListener('touchstart', swipeStart, { passive: true });
+  el.addEventListener('touchend', swipeEnd, { passive: true });
+});
 document.getElementById('centerBtn').addEventListener('click', () => { if (me) map.setView(me, Math.max(map.getZoom(), 17)); });
 document.getElementById('fitBtn').addEventListener('click', fitHole);
+document.getElementById('endBtn').addEventListener('click', () => { if (round()) endRoundSheet(); });
 
 // ---------- 시트(메뉴/코스/스코어카드) ----------
 const sheet = document.getElementById('sheet'), box = document.getElementById('sheetBox');
@@ -1058,19 +1117,38 @@ function recentCourseIds() {   // 최근 라운드한 코스 먼저, 나머지�
   Object.keys(store.courses).forEach(id => { if (!ids.includes(id)) ids.push(id); });
   return ids;
 }
+// 시작 화면 — 앱을 열 때마다: ① 진행 중 라운드 이어서/끝내기 ② 새 라운드(골프장 검색·최근 골프장 → 출발 코스 고르기) ③ 지난 라운드
+function recentClubs() {   // 최근 라운드한 골프장 — 같은 골프장의 여러 코스 조합은 하나로
+  const seen = new Set(), out = [];
+  recentCourseIds().forEach(id => {
+    const c = store.courses[id], k = c.src && c.src.startsWith('db:') ? c.src : id;
+    if (!seen.has(k)) { seen.add(k); out.push(id); }
+  });
+  return out.slice(0, 6);
+}
 function openHome() {
   if (review) closeReview();
-  const rd = round(), ids = recentCourseIds(), stale = roundIsStale();
-  openSheet(`<h3>⛳ ${rd && !stale ? '다른 골프장으로 새 라운드' : '오늘 라운딩할 골프장'}</h3>
-    ${rd && course() ? `<div class="list"><button data-act="close">↩ ${!roundPlayed(rd) ? '시작해 둔 라운드로 돌아가기' : stale ? '지난 라운드 이어서 보기' : '진행 중 라운드 이어서'} <span class="muted">· ${esc(course().name)} ${holeIdx() + 1}번홀</span></button>
-      <button data-act="finish">🏁 이 라운드 끝내기 <span class="muted">· ${roundPlayed(rd) ? '저장 또는 기록 버리기' : '기록 없음'}</span></button></div>
-      ${stale && roundPlayed(rd) ? '<p class="muted" style="margin:0">끝내지 않아도 새 라운드를 시작하면 지난 라운드는 자동으로 「지난 라운드」에 저장됩니다.</p>' : ''}` : ''}
+  const rd = round(), stale = roundIsStale(), live = rd && course();
+  const n = live ? playedHoles(rd) : 0, hist = store.history.length;
+  const clubBtn = id => {
+    const c = store.courses[id], k = dbIndexOf(c);
+    return k >= 0 ? `<button data-act="quickPick" data-id="${k}">⛳ ${esc(PAR_DB[k].name)} <span class="muted">· ${PAR_DB[k].nines.length > 1 ? '출발 코스 고르기' : '9홀'}</span></button>`
+      : `<button data-act="play" data-id="${id}">⛳ ${esc(c.name)} <span class="muted">· 그린 ${greenCount(id)}/18</span></button>`;
+  };
+  const ids = recentClubs();
+  openSheet(`<h3>⛳ 골프 거리측정</h3>
+    ${live ? `<div style="background:#0d2016;border-radius:10px;padding:8px 10px;margin-bottom:10px">
+      <p style="margin:0 0 4px"><b>${stale ? '끝내지 않은 라운드' : '진행 중인 라운드'}</b> <span class="muted">· ${esc(course().name)} · ${holeIdx() + 1}번홀 · ${n ? n + '홀 기록' : '기록 없음'}</span></p>
+      <div class="list" style="margin:0"><button data-act="close" class="${stale ? '' : 'primary'}">▶ 이어서 하기 <span class="muted">· ${holeIdx() + 1}번홀부터</span></button>
+        <button data-act="finish">🏁 이 라운드 끝내기 <span class="muted">· ${n ? '저장 또는 기록 버리기' : '기록 없음'}</span></button></div>
+      ${n ? '<p class="muted" style="margin:4px 0 0">새 라운드를 시작하면 이 라운드는 자동으로 「지난 라운드」에 저장됩니다.</p>' : ''}</div>` : ''}
+    <p style="margin:0 0 4px"><b>${live ? '⛳ 새 라운드 시작' : '⛳ 오늘 라운딩할 골프장'}</b></p>
     <div class="row"><input type="text" id="homeQ" placeholder="골프장 이름 입력 (예: 레이크사이드)" enterkeyhint="search" autocomplete="off"></div>
     <div id="homeOut"></div>
-    ${ids.length ? `<p class="muted" style="margin:10px 0 0">최근 코스 — 누르면 바로 시작</p><div class="list">${ids.map(id =>
-      `<button data-act="play" data-id="${id}">⛳ ${esc(store.courses[id].name)} <span class="muted">· 그린 ${greenCount(id)}/18</span></button>`).join('')}</div>` : ''}
-    <div class="list">${canEdit() ? '<button data-act="homeMore">🔎 상세 검색 (OpenStreetMap·직접 만들기)</button>' : ''}
-      <button data-act="menu">☰ 전체 메뉴 (지난 라운드·코스 관리·설정)</button></div>`);
+    ${ids.length ? `<p class="muted" style="margin:8px 0 0">최근 코스 — 누르면 출발 코스를 고르고 시작</p><div class="list">${ids.map(clubBtn).join('')}</div>` : ''}
+    <div class="list" style="margin-top:10px">${hist ? `<button data-act="history">📚 지난 라운드 보기 <span class="muted">· ${hist}회 (스코어카드·샷 궤적)</span></button>` : ''}
+      ${canEdit() ? '<button data-act="homeMore">🔎 상세 검색 (OpenStreetMap·직접 만들기)</button>' : ''}
+      <button data-act="menu">☰ 전체 메뉴 (코스 관리·설정·백업)</button></div>`);
   document.getElementById('homeQ').addEventListener('input', homeSearch);
 }
 function homeSearch() {
@@ -1343,7 +1421,7 @@ document.addEventListener('visibilitychange', keepAwake);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-startGps(); keepAwake(); render(); fitHole();
+repairRound(); startGps(); keepAwake(); render(); fitHole();
 // 앱을 열거나(새로 실행) 백그라운드에서 다시 돌아왔을 때: 쉬고 있는 라운드(3시간 기록 없음·날짜 바뀜)는
 // 뒤에 남겨 두지 않고 정리 — 기록 있으면 「지난 라운드」에 저장, 시작만 하고 1시간 지난 빈 라운드는 버림 → 깨끗한 첫 화면
 function tidyStaleRound(onOpen) {
@@ -1352,8 +1430,7 @@ function tidyStaleRound(onOpen) {
     if (sheet.classList.contains('show')) closeSheet();
     archiveStaleRound(); render();
   }
-  if (!round() || roundIsStale()) { if (!sheet.classList.contains('show')) openHome(); }
-  else if (onOpen) toast(`▶ 진행 중 라운드 이어서 — ${course().name} ${holeIdx() + 1}번홀 · 끝내려면 ☰ → 라운드 종료`, 4000);
+  if ((onOpen || !round() || roundIsStale()) && !sheet.classList.contains('show')) openHome();
 }
 setTimeout(() => tidyStaleRound(true), 400);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tidyStaleRound(false); });
