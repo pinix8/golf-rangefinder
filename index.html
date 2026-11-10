@@ -169,7 +169,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v21';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v22';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -297,7 +297,7 @@ function render() {
     $('lastShot').style.display = 'none';
     return;
   }
-  $('holeTitle').innerHTML = `<b>${holeIdx() + 1}번홀 · Par ${h.par} <span style="font-size:13px;opacity:.6">✎</span></b><small>${esc(c.name)}</small>`;
+  $('holeTitle').innerHTML = `<b>${holeIdx() + 1}번홀 · Par ${h.par} <span style="font-size:13px;opacity:.6">✎</span></b><small>${esc(c.name)}${canSwapNines(c) && !c.name.includes('→') ? ` · ${esc(c.nines[0])} 출발` : ''}</small>`;
   const g = h.green || {};
   const pin = pinPoint();
   $('dF').textContent = me && g.f ? fmt(haversine(me, g.f)) : '—';
@@ -607,6 +607,7 @@ function openMenu() {
     ${rd ? `<button data-act="card">📋 스코어카드</button>
             <button data-act="ojang">🎲 오장게임 ${rd.game ? '(진행 중 — 이어서)' : '(4인 타당 정산)'}</button>
             <button data-act="updown">🤝 팀 업다운 ${rd.updown ? '(진행 중 — 이어서)' : '(2팀 매홀 승부)'}</button>
+            ${canSwapNines(course()) ? `<button data-act="nineChange">🔄 출발 코스 바꾸기 <span class="muted">· 지금 ${esc(course().nines.join(' → '))}</span></button>` : ''}
             <button data-act="setup">📍 ${holeIdx() + 1}번홀 그린·티 위치 설정</button>
             <button data-act="finish">🏁 라운드 종료 (저장 / 기록 버리기)</button>` : ''}
     <button data-act="start">⛳ ${rd ? '다른 코스로 새 라운드' : '라운드 시작 (코스 선택)'}</button>
@@ -635,7 +636,11 @@ box.addEventListener('click', e => {
   else if (a === 'start') openHome();
   else if (a === 'menu') openMenu();
   else if (a === 'quickPick') quickPick(+id);
-  else if (a === 'quickGo') quickStart(+id, +document.getElementById('qFront').value, +document.getElementById('qBack').value);
+  else if (a === 'quickGo') quickStart(pick.i, +t.dataset.f, +t.dataset.b);
+  else if (a === 'nineF' || a === 'nineB') pickNine(a === 'nineF' ? 'f' : 'b', +t.dataset.k);
+  else if (a === 'nineSwap') { [pick.f, pick.b] = [pick.b, pick.f]; pickSheet(); }
+  else if (a === 'nineChange') quickPick(dbIndexOf(course()), 'change');
+  else if (a === 'nineApply') applyNines(+t.dataset.f, +t.dataset.b);
   else if (a === 'homeMore') { osmState.query = document.getElementById('homeQ').value.trim(); osmSearchSheet(); }
   else if (a === 'courses') manageCourses();
   else if (a === 'history') showHistory();
@@ -932,6 +937,7 @@ function holeSheet() {
     <div class="row">${[3, 4, 5, 6].map(p => `<button data-act="holePar" data-id="${p}" class="${p === h.par ? 'on' : ''}">Par ${p}</button>`).join('')}</div>`
       : `<p><b>Par ${h.par}</b> <span class="muted">· 파 정보가 틀리면 관리자에게 알려 주세요</span></p>`}
     <div class="list">
+      ${canSwapNines(c) ? `<button data-act="nineChange">🔄 출발 코스 바꾸기 <span class="muted">· 지금 ${esc(c.nines.join(' → '))}</span></button>` : ''}
       <button data-act="setup">📍 그린·티 위치 다시 지정 (지도 탭)</button>
       ${h.green || h.tee ? '<button data-act="holeClear">🗑 이 홀 그린·티 위치 지우기</button>' : ''}
       <button data-act="edit" data-id="${cid}">${adm ? '✏️ 코스 전체 편집 (18홀 파·이름)' : '📋 코스 정보 (18홀 파·그린 등록 현황)'}</button>
@@ -999,26 +1005,72 @@ function findOrMakeDbCourse(c, f, b) {
   save();
   return id;
 }
-function quickPick(i) {
+// ---------- 출발 코스 고르기 — 골프장마다 그날 OUT/IN(또는 동·서·남…) 어느 코스에서 출발할지 다름 ----------
+// 18홀: 「A 출발」「B 출발」 한 번 누르면 시작 / 27·36홀: 전반·후반 코스 버튼 → 시작
+// 라운드 중에도 홀 번호(또는 메뉴) → 「출발 코스 바꾸기」로 고칠 수 있음 (친 기록은 1번홀·2번홀… 순서 그대로)
+const pick = { i: -1, f: 0, b: 1, mode: 'start' };
+const nineName = l => /코스$/.test(l) ? l : l + ' 코스';
+const nineSum = (c, n) => dbPars(c, n).reduce((s, v) => s + v, 0);
+const dbIndexOf = cc => cc && cc.src && cc.src.startsWith('db:') ? PAR_DB.findIndex(x => x.name === cc.src.slice(3)) : -1;
+const canSwapNines = cc => { const k = dbIndexOf(cc); return k >= 0 && PAR_DB[k].nines.length > 1 && !!cc.nines; };
+function quickPick(i, mode) {
   const c = PAR_DB[i]; if (!c) return;
-  if (c.nines.length <= 2) { quickStart(i, 0, c.nines.length > 1 ? 1 : 0); return; }
-  // 27·36홀: 지난번 고른 전후반을 기본값으로
-  const last = recentCourseIds().map(id => store.courses[id]).find(x => x.src === 'db:' + c.name && x.nines);
-  const fi = last ? Math.max(0, c.nines.findIndex(n => n.label === last.nines[0])) : 0;
-  const bi = last ? Math.max(0, c.nines.findIndex(n => n.label === last.nines[1])) : 1;
-  const opt = sel => c.nines.map((n, k) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(n.label)} (Par ${dbPars(c, n).reduce((s, v) => s + v, 0)})</option>`).join('');
-  openSheet(`<h3>${esc(c.name)}</h3>
-    <p class="muted">오늘 도는 코스를 고르세요 (${c.nines.length * 9}홀 골프장)</p>
-    <div class="row"><span style="flex:0 0 auto">전반</span><select id="qFront">${opt(fi)}</select></div>
-    <div class="row"><span style="flex:0 0 auto">후반</span><select id="qBack">${opt(bi)}</select></div>
-    ${c.verified ? '' : `<p style="color:var(--warn)">⚠️ 파 확인 필요 — 현장 스코어카드와 비교하세요.</p>`}
-    <div class="list"><button data-act="quickGo" data-id="${i}" class="primary">⛳ 바로 라운드 시작</button><button data-act="start">← 다시 검색</button></div>`);
+  if (c.nines.length === 1) { quickStart(i, 0, 0); return; }   // 9홀 골프장: 같은 9홀 두 번
+  const len = c.nines.length, at = l => c.nines.findIndex(n => n.label === l);
+  const last = mode === 'change' ? course()
+    : recentCourseIds().map(id => store.courses[id]).find(x => x.src === 'db:' + c.name && x.nines);   // 지난번 고른 코스가 기본
+  let f = last ? at(last.nines[0]) : 0, b = last ? at(last.nines[1]) : 1;
+  if (f < 0) f = 0;
+  if (b < 0 || b === f) b = (f + 1) % len;
+  Object.assign(pick, { i, f, b, mode: mode || 'start' });
+  pickSheet();
+}
+function pickSheet() {
+  const c = PAR_DB[pick.i], go = pick.mode === 'change' ? 'nineApply' : 'quickGo', N = c.nines;
+  const title = pick.mode === 'change' ? '🔄 출발 코스 바꾸기' : esc(c.name);
+  const lbl = k => `${esc(N[k].label)} <span class="muted">Par ${nineSum(c, N[k])}</span>`;
+  let body;
+  if (N.length === 2) {
+    const btn = (f, b) => `<button data-act="${go}" data-f="${f}" data-b="${b}" class="${f === pick.f ? 'primary' : ''}" style="text-align:left;padding:14px">
+      ⛳ <b style="font-size:17px">${esc(nineName(N[f].label))} 출발</b><br>
+      <span class="muted">1~9번홀 = ${lbl(f)} → 10~18번홀 = ${lbl(b)}</span></button>`;
+    body = `<p>오늘 <b>어느 코스에서 출발</b>하세요?</p>
+      <div class="list">${btn(0, 1)}${btn(1, 0)}</div>
+      <p class="muted">예약 문자·카트·스코어카드에 적힌 출발 코스(예: 「IN 출발」「${esc(N[1].label)} 10번홀 티오프」)를 고르세요.</p>`;
+  } else {
+    const chips = (act, sel, dis) => `<div class="row">${N.map((n, k) => `<button data-act="${act}" data-k="${k}" class="${k === sel ? 'on' : ''}" ${k === dis ? 'disabled style="opacity:.35"' : ''}>${esc(n.label)}<br><small>Par ${nineSum(c, n)}</small></button>`).join('')}</div>`;
+    body = `<p class="muted" style="margin:0">${N.length * 9}홀 골프장 — 오늘 도는 두 코스를 순서대로 누르세요</p>
+      <p style="margin:10px 0 0"><b>① 출발 코스</b> <span class="muted">(1~9번홀)</span></p>${chips('nineF', pick.f, -1)}
+      <p style="margin:10px 0 0"><b>② 후반 코스</b> <span class="muted">(10~18번홀)</span></p>${chips('nineB', pick.b, pick.f)}
+      <p style="text-align:center;font-size:16px;margin:12px 0 4px"><b>${esc(N[pick.f].label)} → ${esc(N[pick.b].label)}</b>
+        <span class="muted">· 합계 Par ${nineSum(c, N[pick.f]) + nineSum(c, N[pick.b])}</span></p>
+      <div class="list"><button data-act="${go}" data-f="${pick.f}" data-b="${pick.b}" class="primary">⛳ ${pick.mode === 'change' ? '이 순서로 바꾸기' : '이 순서로 라운드 시작'}</button>
+        <button data-act="nineSwap">↔ 전반·후반 순서 뒤집기</button></div>`;
+  }
+  const note = pick.mode === 'change' && roundPlayed(round())
+    ? '<p class="muted">이미 친 홀의 타수·샷은 순서(1번홀, 2번홀…) 그대로 두고 파·그린 위치만 새 순서로 바뀝니다.</p>' : '';
+  openSheet(`<h3>${title}</h3>${pick.mode === 'change' ? `<p class="muted" style="margin:0">${esc(c.name)} · 지금: ${esc(course().nines.join(' → '))}</p>` : ''}
+    ${body}${note}
+    ${c.verified ? '' : '<p style="color:var(--warn)">⚠️ 파 확인 필요 — 현장 스코어카드와 비교하세요.</p>'}
+    <div class="list">${pick.mode === 'change' ? '<button data-act="close">닫기</button>' : '<button data-act="start">← 다시 검색</button>'}</div>`);
+}
+function pickNine(which, k) {
+  const len = PAR_DB[pick.i].nines.length;
+  if (which === 'f') { pick.f = k; if (pick.b === k) pick.b = (k + 1) % len; }
+  else if (k !== pick.f) pick.b = k;
+  pickSheet();
 }
 function quickStart(i, fk, bk) {
   const c = PAR_DB[i]; if (!c) return;
   const id = findOrMakeDbCourse(c, c.nines[fk], c.nines[bk]);
   startRound(id);
-  if (round() && round().courseId === id && greenCount(id)) toast(`⛳ ${store.courses[id].name} — 1번홀부터 시작합니다`, 2500);
+}
+function applyNines(fk, bk) {   // 라운드 중 출발 코스 바꾸기 — 라운드 기록은 그대로, 코스(파·그린)만 교체
+  const c = PAR_DB[pick.i], rd = round(); if (!c || !rd) return;
+  const id = findOrMakeDbCourse(c, c.nines[fk], c.nines[bk]);
+  if (id !== rd.courseId) { rd.courseId = id; save(); render(); fitHole(); }
+  closeSheet();
+  toast(`⛳ ${c.nines[fk].label} 출발로 바꿨습니다 (${c.nines[fk].label} → ${c.nines[bk].label})`, 3000);
 }
 function greenCount(id) { return store.courses[id].holes.filter(h => h.green && h.green.c).length; }
 // 쉬고 있는 라운드 = 기록이 하나도 없거나, 마지막 기록 후 3시간 경과·날짜 변경(종료를 깜빡한 경우)
@@ -1046,7 +1098,7 @@ function startRound(id) {
   if (!greenCount(id)) {
     toast('그린 위치를 아직 등록하지 않은 코스입니다. 지도에서 그린을 탭해 설정하세요', 3500);
     enterSetup('c');
-  }
+  } else if (canSwapNines(course())) toast(`⛳ ${course().nines[0]} 출발 (${course().nines.join(' → ')}) — 출발 코스가 다르면 위 홀 번호를 눌러 바꾸세요`, 3500);
 }
 function manageCourses() {
   const ids = Object.keys(store.courses);
