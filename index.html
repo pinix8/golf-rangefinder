@@ -20,6 +20,7 @@
     --accent: #7ee08a; --warn: #ffcc4d; --bad: #ff6b6b; --btn: #1d3d2a;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body, button { touch-action: manipulation; }   /* 빠른 연타가 확대(더블탭 줌)로 먹히지 않게 */
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
   body { display: flex; flex-direction: column; overscroll-behavior: none; }
@@ -77,9 +78,10 @@
   .score { display: flex; gap: 8px; margin-top: 6px; }
   .counter { flex: 1; display: flex; align-items: center; justify-content: space-between; background: #0d2016;
     border-radius: 10px; padding: 3px; }
-  .counter span { font-size: 13px; color: var(--muted); padding-left: 6px; }
-  .counter b { font-size: 22px; min-width: 28px; text-align: center; }
-  .counter button { padding: 6px 14px; font-size: 18px; }
+  .counter span { font-size: 13px; color: var(--muted); padding-left: 4px; white-space: nowrap; }
+  @media (max-width: 380px) { .counter button { min-width: 42px; } .counter b { min-width: 30px; } }
+  .counter b { font-size: 24px; min-width: 40px; text-align: center; cursor: pointer; text-decoration: underline dotted 1px; text-underline-offset: 5px; }
+  .counter button { min-width: 50px; min-height: 46px; padding: 4px 8px; font-size: 22px; font-weight: 700; user-select: none; -webkit-user-select: none; }
 
   .sheet { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.6); display: none; }
   .sheet.show { display: flex; align-items: flex-end; }
@@ -97,8 +99,9 @@
   .holegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .holegrid div { background: #0d2016; border-radius: 8px; padding: 6px; font-size: 13px; }
   .muted { color: var(--muted); font-size: 12px; }
-  .toast { position: fixed; left: 50%; bottom: 40%; transform: translateX(-50%); z-index: 3000; background: rgba(0,0,0,.85);
-    padding: 10px 16px; border-radius: 10px; display: none; font-size: 15px; }
+  /* 알림은 화면 위쪽(지도 위)에, 터치는 통과 — 알림이 떠 있는 동안 아래 버튼(타수·퍼트 등)이 먹통 되지 않게 */
+  .toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 64px); transform: translateX(-50%); z-index: 3000; background: rgba(0,0,0,.85);
+    padding: 10px 16px; border-radius: 10px; display: none; font-size: 15px; pointer-events: none; width: max-content; max-width: 92vw; }
 
   .leaflet-container { background: #111; }
   .lbl-tip { background: rgba(0,0,0,.75); color: #fff; border: 0; font-weight: 700; font-size: 13px; }
@@ -154,8 +157,8 @@
     <button id="undoBtn">↶ 취소</button>
   </div>
   <div class="score">
-    <div class="counter"><span id="strokesLbl">타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
-    <div class="counter" id="puttBox"><span>퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
+    <div class="counter"><span id="strokesLbl" style="cursor:pointer">타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
+    <div class="counter" id="puttBox"><span id="puttsLbl" style="cursor:pointer">퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
   </div>
 </div>
 
@@ -169,7 +172,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v22';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v24';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -254,6 +257,7 @@ function startGps() {
     meMarker.setLatLng(me).addTo(map);
     meAcc.setLatLng(me).setRadius(meAccM).addTo(map);
     if (firstFix) { firstFix = false; fitHole(); }
+    autoHoleCheck();
     render();
   }, err => {
     setBadge(err.code === 1 ? '위치권한 거부' : 'GPS 오류', 'bad');
@@ -324,7 +328,7 @@ function render() {
   } else $('lastShot').style.display = 'none';
   $('shotList').textContent = shotSummary(shots, pin);
   $('strokes').textContent = r.strokes;
-  $('strokesLbl').textContent = r.manual || shots.length < 2 ? '타수' : '타수(자동)';
+  $('strokesLbl').textContent = r.manual || shots.length < 2 ? '타수' : '타수(샷)';
   $('putts').textContent = r.putts;
   checkOnGreen(g, r);
   drawLayers();
@@ -344,6 +348,52 @@ function checkOnGreen(g, r) {
     onGreenHole = key;
     toast(`⛳ 온그린 — ${r.shots.length >= 2 ? '그린 위 볼 위치를 「샷 위치 기록」 후 ' : ''}퍼트 수를 입력하세요`, 3500);
   }
+}
+// ---------- 홀 자동 넘김 (GPS) — 샷 기록을 못 해도 다음 홀 티잉그라운드·그린에 가면 그 홀로 이동 ----------
+// 판정 근거(등록된 위치가 있는 홀만): ① 다음 1~3개 홀의 티 근처 도착 ② 지금 홀 그린에 갔다가 40m 이상 떠남
+// ③ 다음 1~3개 홀 그린 위에 20초 이상 머묾. 같은 판정이 일정 시간 이어져야 넘어감(GPS 튐 방지)
+// ◀▶로 직접 옮기면 자동 넘김을 잠시 멈춤(그 자리에서 80m 이상 움직이고 2분 지나야 다시 동작)
+const AH_CFG = { teeR: 35, leaveR: 40, sustain: 8000, greenSustain: 20000, pauseMove: 80, pauseMs: 120000, maxAcc: 25 };
+const AH = { cand: null, since: 0, n: 0, pause: null, visited: {}, endTold: null };
+const autoHoleOn = () => store.autoHole !== false;
+function autoHoleCandidate() {
+  const rd = round(), c = course(), n = rd.hole, H = c.holes, cur = H[n], g = cur.green && cur.green.c ? cur.green : null;
+  const dG = g ? haversine(me, g.c) : Infinity, rG = g ? greenRadius(g) : 0;
+  const key = rd.date + ':' + n;
+  if (g && dG <= rG + 5) AH.visited[key] = true;
+  if (g && dG <= rG + 15) return null;                       // 아직 지금 홀 그린 주변
+  const teeR = AH_CFG.teeR + Math.min(meAccM || 0, 10);
+  const dCurTee = cur.tee ? haversine(me, cur.tee) : Infinity;
+  for (let k = n + 1; k <= Math.min(n + 3, 17); k++) {
+    const h = H[k];
+    if (h.tee) { const d = haversine(me, h.tee); if (d <= teeR && d + 15 < dCurTee && d + 10 < dG) return { k, why: 'tee' }; }
+    if (h.green && h.green.c && haversine(me, h.green.c) <= greenRadius(h.green) && meAccM <= 15) return { k, why: 'green' };
+  }
+  if (AH.visited[key] && dG > rG + AH_CFG.leaveR) return n < 17 ? { k: n + 1, why: 'leave' } : { k: -1, why: 'end' };
+  return null;
+}
+function autoHoleCheck() {
+  const rd = round();
+  if (!rd || !course() || !me || review || setup || !autoHoleOn() || measuring || meAccM > AH_CFG.maxAcc) return;
+  if (AH.pause) {
+    if (haversine(me, AH.pause.p) < AH_CFG.pauseMove || Date.now() - AH.pause.t < AH_CFG.pauseMs) return;
+    AH.pause = null;
+  }
+  const c = autoHoleCandidate(), id = c && c.k + ':' + c.why;
+  if (!c) { AH.cand = null; return; }
+  if (AH.cand !== id) { AH.cand = id; AH.since = Date.now(); AH.n = 1; return; }
+  AH.n++;
+  if (Date.now() - AH.since < (c.why === 'green' ? AH_CFG.greenSustain : AH_CFG.sustain) || AH.n < 2) return;
+  AH.cand = null;
+  if (c.why === 'end') {
+    if (AH.endTold !== rd.date) { AH.endTold = rd.date; toast('🏁 18번홀 끝 — ☰ 메뉴에서 「라운드 종료」로 저장하세요', 5000); }
+    return;
+  }
+  const from = rd.hole, empty = [];
+  for (let i = from; i < c.k; i++) if (!rd.holes[i].strokes) empty.push(i + 1);
+  goHole(c.k - from, true);
+  toast(`⛳ ${c.k + 1}번홀로 자동 이동 (${c.why === 'leave' ? `${from + 1}번홀 그린을 떠남` : c.why === 'tee' ? '티잉그라운드 도착' : '그린 도착'})`
+    + (empty.length ? ` · ${empty.join('·')}번홀 타수 미입력 — 타수 숫자를 눌러 입력` : '') + ' · 잘못 넘어갔으면 ◀', 6000);
 }
 // 타수 자동 계산: 기록한 샷 위치 수(티 제외) + 퍼트. 타수를 직접 누르면 수동 모드
 function autoStrokes(r) {
@@ -545,8 +595,9 @@ document.getElementById('pinSlider').addEventListener('input', e => setPin(+e.ta
 
 // ---------- 타수/퍼트 ----------
 document.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', () => {
-  const r = holeRec(); if (!r) return;
-  const k = b.dataset.c;
+  if (!needRound()) return;
+  const r = holeRec(), k = b.dataset.c;
+  if (navigator.vibrate) navigator.vibrate(10);
   r[k] = Math.max(0, r[k] + (+b.dataset.d));
   if (k === 'strokes') r.manual = true;          // 타수를 직접 바꾸면 자동 계산 중지 (OB·벌타 등)
   else autoStrokes(r);
@@ -554,12 +605,52 @@ document.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', (
   save(); render();
 }));
 
+// ---------- 타수·퍼트 직접 입력 화면 — 숫자를 누르면 큰 버튼으로 바로 입력 (샷 기록 없이도, 지난 홀도) ----------
+let qsHole = 0;
+const scoreName = (s, par) => s === 1 ? '홀인원' : ({ '-3': '알바트로스', '-2': '이글', '-1': '버디', 0: '파', 1: '보기', 2: '더블', 3: '트리플' })[s - par] || (s - par > 0 ? `+${s - par}` : '');
+function needRound() {
+  if (round() && course()) return true;
+  toast('먼저 라운드를 시작하세요 — 골프장을 고르면 타수를 입력할 수 있습니다', 3000); openHome(); return false;
+}
+function scoreSheet(i) {
+  if (!needRound()) return;
+  const rd = round();
+  qsHole = i == null ? holeIdx() : (i + 18) % 18;
+  const r = rd.holes[qsHole], par = course().holes[qsHole].par, auto = !r.manual && r.shots.length >= 2;
+  const sMax = Math.max(par + 5, 9, r.strokes);
+  const sBtn = s => `<button data-act="qsS" data-id="${s}" class="${s === r.strokes ? 'on' : ''}" style="padding:10px 2px;line-height:1.15"><b style="font-size:20px">${s}</b><br><small>${scoreName(s, par)}</small></button>`;
+  const pBtn = p => `<button data-act="qsP" data-id="${p}" class="${p === r.putts ? 'on' : ''}" style="padding:12px 2px;font-size:20px;font-weight:700">${p}</button>`;
+  const empty = rd.holes.map((h, k) => !h.strokes && k < holeIdx() ? k + 1 : 0).filter(Boolean);
+  openSheet(`<div class="row" style="margin:0 0 6px"><button data-act="qsHole" data-id="-1" style="flex:0 0 auto">◀</button>
+      <h3 style="margin:0;text-align:center">${qsHole + 1}번홀 · Par ${par}${qsHole === holeIdx() ? '' : ' <small class="muted">(지난 홀 입력)</small>'}</h3>
+      <button data-act="qsHole" data-id="1" style="flex:0 0 auto">▶</button></div>
+    <p style="margin:6px 0 4px"><b>타수</b> <span class="muted">${auto ? '지금은 샷 기록으로 자동 계산 중 — 숫자를 누르면 직접 입력으로 바뀝니다' : r.manual ? '직접 입력' : '숫자를 누르세요'}</span></p>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">${Array.from({ length: sMax }, (_, k) => sBtn(k + 1)).join('')}</div>
+    <p style="margin:12px 0 4px"><b>퍼트</b></p>
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px">${[0, 1, 2, 3, 4, 5].map(pBtn).join('')}</div>
+    ${r.manual && r.shots.length >= 2 ? `<div class="list"><button data-act="qsAuto">📍 샷 기록으로 자동 계산 (${r.shots.length - 1 + r.putts}타)</button></div>` : ''}
+    ${empty.length ? `<p style="color:var(--warn);margin:8px 0 0">미입력: ${empty.join('·')}번홀 — ◀로 가서 입력</p>` : ''}
+    <div class="row"><button data-act="qsClear">지우기</button><button data-act="close" class="primary">✓ 완료</button></div>`);
+}
+function qsSet(k, v) {
+  const r = round().holes[qsHole];
+  if (k === 's') { r.strokes = v; r.manual = true; if (r.putts > v) r.putts = v; }
+  else if (k === 'p') { r.putts = v; if (r.manual) { if (v > r.strokes) r.strokes = v; } else { autoStrokes(r); if (v > r.strokes) r.strokes = v; } }
+  else if (k === 'auto') { r.manual = false; autoStrokes(r); }
+  else if (k === 'clear') { r.strokes = 0; r.putts = 0; r.manual = false; }
+  if (navigator.vibrate) navigator.vibrate(15);
+  save(); render(); scoreSheet(qsHole);
+}
+['strokes', 'putts', 'strokesLbl', 'puttsLbl'].forEach(id => document.getElementById(id).addEventListener('click', () => scoreSheet()));
+
 // ---------- 홀 이동 ----------
-function goHole(d) {
+function goHole(d, auto) {
   const rd = round(); if (!rd) return;
+  AH.cand = null;
+  if (!auto && me) AH.pause = { p: me.slice(), t: Date.now() };   // 직접 옮겼으면 그 자리를 떠날 때까지 자동 넘김 멈춤
   rd.hole = (rd.hole + d + 18) % 18; measure = null;
   save(); render(); fitHole(); showBanner();
-  if (!(holeDef().green && holeDef().green.c)) toast('이 홀의 그린 위치가 없습니다. ☰ → 그린 위치 설정', 2500);
+  if (!auto && !(holeDef().green && holeDef().green.c)) toast('이 홀의 그린 위치가 없습니다. ☰ → 그린 위치 설정', 2500);
 }
 document.getElementById('prevHole').addEventListener('click', () => goHole(-1));
 document.getElementById('nextHole').addEventListener('click', () => goHole(1));
@@ -613,6 +704,7 @@ function openMenu() {
     <button data-act="start">⛳ ${rd ? '다른 코스로 새 라운드' : '라운드 시작 (코스 선택)'}</button>
     <button data-act="courses">🗺️ 코스 관리 (${canEdit() ? '파·' : ''}그린 위치)</button>
     <button data-act="history">📚 지난 라운드</button>
+    <button data-act="autoHole">🔄 홀 자동 넘김 (GPS): <b>${autoHoleOn() ? '켜짐' : '꺼짐'}</b> <span class="muted">· 그린·티 위치가 등록된 홀에서 동작</span></button>
     <button data-act="unit">📏 단위: ${store.unit === 'm' ? '미터(m)' : '야드(yd)'} → 변경</button>
     <button data-act="backup">💾 데이터 백업/복원</button>
     ${isStandalone() ? '' : '<button data-act="install">📲 휴대폰에 앱으로 설치</button>'}
@@ -644,6 +736,12 @@ box.addEventListener('click', e => {
   else if (a === 'homeMore') { osmState.query = document.getElementById('homeQ').value.trim(); osmSearchSheet(); }
   else if (a === 'courses') manageCourses();
   else if (a === 'history') showHistory();
+  else if (a === 'autoHole') { store.autoHole = !autoHoleOn(); save(); openMenu(); toast(`홀 자동 넘김 ${autoHoleOn() ? '켜짐' : '꺼짐'}`); }
+  else if (a === 'qsS') qsSet('s', +id);
+  else if (a === 'qsP') qsSet('p', +id);
+  else if (a === 'qsAuto') qsSet('auto');
+  else if (a === 'qsClear') qsSet('clear');
+  else if (a === 'qsHole') scoreSheet(qsHole + +id);
   else if (a === 'unit') { store.unit = store.unit === 'm' ? 'yd' : 'm'; save(); render(); openMenu(); }
   else if (a === 'backup') showBackup();
   else if (a === 'newCourse') newCourse();
