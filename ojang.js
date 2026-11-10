@@ -9,7 +9,7 @@
 //  · 보정 타수(정산에만 사용, 배판 판정은 실제 타수): 버디 −1, 퍼터 이글 −3, 샷 이글 −5, 파3 니어 −1, 파5 롱기 −1 (모두 설정 가능, 롱기 0이면 안 씀)
 const OJ_N = 4;
 const OJ_DEFAULT = { names: ['나', '플레이어2', '플레이어3', '플레이어4'], won: 1000, wonDbl: 2000, tieNext: true,
-  birdie: 1, eaglePutt: 3, eagleShot: 5, near: 1, long: 1, special: {}, force: {} };
+  birdie: 1, eaglePutt: 3, eagleShot: 5, near: 1, long: 0, special: {}, force: {} };   // 롱기는 잘 안 써서 기본 0
 const OJ_PRESETS = [[1000, 2000, '1천 / 2천'], [5000, 10000, '5천 / 1만'], [10000, 20000, '1만 / 2만']];
 const OJ_MULTS = [1, 2, 3, 4, 5];
 let ojCur = 0;   // 게임 화면에서 보고 있는 홀
@@ -89,7 +89,7 @@ function ojSetup() {
     <div class="row"><span>퍼터 이글</span>${num('ojEP', g.eaglePutt)}</div>
     <div class="row"><span>샷 이글</span>${num('ojES', g.eagleShot)}</div>
     <div class="row"><span>파3 니어</span>${num('ojNear', g.near)}</div>
-    <div class="row"><span>파5 롱기 (0=안 씀)</span>${num('ojLong', g.long == null ? 1 : g.long)}</div>
+    <div class="row"><span>파5 롱기 <small class="muted">(0=안 씀 · 쓸 때 1)</small></span>${num('ojLong', g.long == null ? 0 : g.long)}</div>
     <b>배판 지정홀</b> <span class="muted">— 누른 홀은 배판 사유가 없어도 배판 금액 (홀 화면에서도 변경 가능)</span>
     <div class="holegrid" style="grid-template-columns:repeat(6,1fr);margin:6px 0">${c.holes.map((_, i) => `<button data-g="force" data-i="${i}" class="${g.force && g.force[i] ? 'on' : ''}" style="padding:8px 0">${i + 1}</button>`).join('')}</div>
     <b>판 키우기</b> <span class="muted">— 2번홀부터 홀 입력 화면에서 ×2~×5 선택 (배판이면 배판 금액에 곱함)</span>

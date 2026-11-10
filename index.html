@@ -81,6 +81,12 @@
   .big.nogreen .num { font-size: 22px; padding: 12px 0; color: var(--warn); }
   .shots { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 16px; white-space: nowrap; overflow-x: auto; }
   .actions { display: flex; gap: 6px; margin-top: 6px; }
+  #holeDoneBtn { width: 100%; margin-top: 6px; padding: 12px 6px; font-size: 16px; }
+  /* 그린 미등록: 큰 거리판·핀 줄·홀 전장 칸을 접고 한 줄 안내만 → 지도(티~그린 공 궤적)를 크게 */
+  #noGreenBar { display: none; background: #0d2016; border: 1px solid #5a4a14; color: var(--warn); border-radius: 10px; padding: 8px 10px; font-size: 14px; cursor: pointer; }
+  #panel.nogreen .dist, #panel.nogreen .pinrow, #panel.nogreen .live > div:first-child { display: none; }
+  #panel.nogreen #noGreenBar { display: block; }
+  #panel.nogreen.noshot .live { display: none; }
   .actions button { flex: 1; padding: 11px 4px; font-size: 14px; }
   .score { display: flex; gap: 8px; margin-top: 6px; }
   .counter { flex: 1; display: flex; align-items: center; justify-content: space-between; background: #0d2016;
@@ -147,6 +153,7 @@
 </div>
 
 <div id="panel">
+  <div id="noGreenBar">📍 그린 위치 미등록 <span class="muted">· 여기를 누르거나 지도에서 그린을 탭해 등록 (등록하면 핀까지 거리)</span></div>
   <div class="dist">
     <div class="big"><div class="lbl" id="pinLbl">핀까지</div><div class="num" id="dPin">—</div></div>
     <div class="fcb">
@@ -172,6 +179,7 @@
     <div class="counter"><span id="strokesLbl" style="cursor:pointer">타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
     <div class="counter" id="puttBox"><span id="puttsLbl" style="cursor:pointer">퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
   </div>
+  <button id="holeDoneBtn" class="primary" style="display:none"></button>
   <div class="actions">
     <button id="teeBtn">⛳ 티샷 위치</button>
     <button id="shotBtn" class="primary">● 샷 위치 기록</button>
@@ -189,7 +197,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v33';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v34';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -358,7 +366,7 @@ function render() {
     $('holeTitle').innerHTML = '<b>골프 거리측정</b><small>☰ 메뉴에서 코스를 선택하세요</small>';
     ['dPin', 'dF', 'dC', 'dB', 'dHole', 'dLast'].forEach(id => { $(id).textContent = '—'; });
     $('strokes').textContent = 0; $('putts').textContent = 0; $('shotList').textContent = '';
-    $('lastShot').style.display = 'none'; $('endBtn').style.display = 'none';
+    $('lastShot').style.display = 'none'; $('endBtn').style.display = 'none'; $('holeDoneBtn').style.display = 'none'; $('panel').classList.remove('nogreen');
     return;
   }
   $('strokes').textContent = r.strokes; $('putts').textContent = r.putts;   // 아래에서 오류가 나도 입력한 숫자는 보이게
@@ -374,6 +382,12 @@ function renderHole($, c, h, r) {
   $('dB').textContent = me && g.b ? fmt(haversine(me, g.b)) : '—';
   $('dPin').textContent = me && pin ? fmt(haversine(me, pin)) : (g.c ? '—' : '그린 위치 미등록 — 탭하여 등록');
   $('dPin').parentElement.classList.toggle('nogreen', !g.c);
+  $('panel').classList.toggle('nogreen', !g.c);
+  $('panel').classList.toggle('noshot', !r.shots.length);
+  const done = r.strokes > 0 && r.putts > 0, hb = $('holeDoneBtn'), hi = holeIdx();
+  hb.style.display = done ? 'block' : 'none';
+  document.querySelector('#panel .actions').style.display = done ? 'none' : '';
+  if (done) hb.innerHTML = hi < 17 ? `✅ ${hi + 1}번홀 끝 · ${r.strokes}타 ${scoreName(r.strokes, h.par)} — <b>${hi + 2}번홀로 ▶</b>` : `🏁 18번홀 끝 · ${r.strokes}타 — <b>라운드 끝내기</b>`;
   $('pinLbl').textContent = `핀까지 (${unitLbl()}) · ${pinName(r.pin)}`;
   document.querySelectorAll('[data-pin]').forEach(b => b.classList.toggle('on', +b.dataset.pin === r.pin));
   $('pinSlider').value = r.pin;
@@ -709,7 +723,8 @@ function scoreSheet(i) {
     <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px">${[0, 1, 2, 3, 4, 5].map(pBtn).join('')}</div>
     ${r.manual && r.shots.length >= 2 ? `<div class="list"><button data-act="qsAuto">📍 샷 기록으로 자동 계산 (${r.shots.length - 1 + r.putts}타)</button></div>` : ''}
     ${empty.length ? `<p style="color:var(--warn);margin:8px 0 0">미입력: ${empty.join('·')}번홀 — ◀로 가서 입력</p>` : ''}
-    <div class="row"><button data-act="qsClear">지우기</button><button data-act="close" class="primary">✓ 완료</button></div>`);
+    <div class="row"><button data-act="qsClear">지우기</button><button data-act="close" class="${r.strokes && qsHole === holeIdx() ? '' : 'primary'}">✓ 닫기</button></div>
+    ${r.strokes && qsHole === holeIdx() ? `<div class="list" style="margin:0"><button data-act="qsNext" class="primary">✅ ${qsHole + 1}번홀 끝 — ${qsHole < 17 ? `${qsHole + 2}번홀로 ▶` : '라운드 끝내기'}</button></div>` : ''}`);
 }
 function qsSet(k, v) {
   const r = round().holes[qsHole];
@@ -720,6 +735,11 @@ function qsSet(k, v) {
   if (navigator.vibrate) navigator.vibrate(15);
   save(); render(); scoreSheet(qsHole);
 }
+bindTap(document.getElementById('holeDoneBtn'), () => {
+  if (!round()) return;
+  if (holeIdx() < 17) goHole(1); else endRoundSheet();
+});
+document.getElementById('noGreenBar').addEventListener('click', () => { if (course()) enterSetup('c'); });
 ['shotList', 'lastShot'].forEach(id => document.getElementById(id).addEventListener('click', () => { if (round() && course()) flowSheet(round(), course(), null, holeIdx()); }));
 ['strokes', 'putts', 'strokesLbl', 'puttsLbl'].forEach(id => document.getElementById(id).addEventListener('click', () => scoreSheet()));
 
@@ -869,6 +889,7 @@ box.addEventListener('click', e => {
   else if (a === 'qsP') qsSet('p', +id);
   else if (a === 'qsAuto') qsSet('auto');
   else if (a === 'qsClear') qsSet('clear');
+  else if (a === 'qsNext') { closeSheet(); if (holeIdx() < 17) goHole(1); else endRoundSheet(); }
   else if (a === 'qsHole') scoreSheet(qsHole + +id);
   else if (a === 'tapDebug') { closeSheet(); tapDebugToggle(); }
   else if (a === 'flowAll') flowAll(t);
@@ -1733,7 +1754,7 @@ function tidyStaleRound(onOpen) {
 setTimeout(() => tidyStaleRound(true), 400);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tidyStaleRound(false); });
 </script>
-<script src="ojang.js?v=30"></script>
+<script src="ojang.js?v=34"></script>
 <script src="updown.js?v=30"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="auth.js?v=21"></script>
