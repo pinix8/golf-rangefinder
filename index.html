@@ -81,7 +81,7 @@
   #holeDoneBtn { width: 100%; margin-top: 6px; padding: 12px 6px; font-size: 16px; }
   /* 그린 미등록: 큰 거리판·핀 줄·홀 전장 칸을 접고 한 줄 안내만 → 지도(티~그린 공 궤적)를 크게 */
   #noGreenBar { display: none; background: #0d2016; border: 1px solid #5a4a14; color: var(--warn); border-radius: 10px; padding: 8px 10px; font-size: 14px; cursor: pointer; }
-  #panel.nogreen .dist, #panel.nogreen .pingrid, #panel.nogreen .live > div:first-child { display: none; }
+  #panel.nogreen .dist, #panel.nogreen .live > div:first-child { display: none; }
   #panel.nogreen #noGreenBar { display: block; }
   #panel.nogreen.noshot .live { display: none; }
   .actions button { flex: 1; padding: 11px 4px; font-size: 14px; }
@@ -198,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v36';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v37';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -682,7 +682,11 @@ document.getElementById('dPin').parentElement.addEventListener('click', () => {
 
 // ---------- 핀 위치 ----------
 function setPin(v, lr) { const r = holeRec(); if (!r) return; r.pin = v; r.pinLR = lr || 0; save(); render(); }
-document.querySelectorAll('[data-pin]').forEach(b => bindTap(b, () => { if (navigator.vibrate) navigator.vibrate(10); setPin(+b.dataset.pin, +b.dataset.lr); }));
+document.querySelectorAll('[data-pin]').forEach(b => bindTap(b, () => {
+  if (navigator.vibrate) navigator.vibrate(10);
+  setPin(+b.dataset.pin, +b.dataset.lr);
+  const h = holeDef(); if (h && !(h.green && h.green.c)) toast(`📍 ${pinName(+b.dataset.pin, +b.dataset.lr)}로 저장 — 이 홀 그린을 등록하면 핀까지 거리가 나옵니다`, 3000);
+}));
 
 // ---------- 타수/퍼트 ----------
 function bindTap(el, fn) {   // 터치: 떼는 순간 실행(20px 넘게 움직이면 무시), 그 뒤 오는 click은 건너뜀
