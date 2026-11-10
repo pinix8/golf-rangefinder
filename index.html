@@ -67,9 +67,6 @@
   .fcb div { display: flex; justify-content: space-between; align-items: baseline; padding: 2px 8px;
     background: #0d2016; border-radius: 8px; font-variant-numeric: tabular-nums; }
   .fcb span { color: var(--muted); font-size: 13px; } .fcb b { font-size: 20px; }
-  .pinrow { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-  .pinrow button { padding: 6px 10px; font-size: 13px; }
-  .pinrow input[type=range] { flex: 1; accent-color: var(--accent); }
   .live { display: flex; gap: 8px; margin-top: 6px; font-size: 13px; color: var(--muted); }
   .live div { flex: 1; background: #0d2016; border-radius: 8px; padding: 4px 8px; }
   .live b { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; }
@@ -84,7 +81,7 @@
   #holeDoneBtn { width: 100%; margin-top: 6px; padding: 12px 6px; font-size: 16px; }
   /* 그린 미등록: 큰 거리판·핀 줄·홀 전장 칸을 접고 한 줄 안내만 → 지도(티~그린 공 궤적)를 크게 */
   #noGreenBar { display: none; background: #0d2016; border: 1px solid #5a4a14; color: var(--warn); border-radius: 10px; padding: 8px 10px; font-size: 14px; cursor: pointer; }
-  #panel.nogreen .dist, #panel.nogreen .pinrow, #panel.nogreen .live > div:first-child { display: none; }
+  #panel.nogreen .dist, #panel.nogreen .pingrid, #panel.nogreen .live > div:first-child { display: none; }
   #panel.nogreen #noGreenBar { display: block; }
   #panel.nogreen.noshot .live { display: none; }
   .actions button { flex: 1; padding: 11px 4px; font-size: 14px; }
@@ -93,8 +90,15 @@
     border-radius: 10px; padding: 3px; }
   .counter span { font-size: 13px; color: var(--muted); padding-left: 4px; white-space: nowrap; }
   /* 좁은 화면·큰 글씨 설정에서도 ＋−가 화면 밖으로 밀리지 않게: 칸이 줄어듦 */
-  .score { flex-wrap: wrap; row-gap: 6px; }
-  .score .counter { min-width: 0; flex: 1 1 150px; }   /* 화면이 좁으면(큰 글씨 설정 포함) 타수·퍼트가 위아래 두 줄로 */
+  /* 왼쪽: 타수·퍼트 두 줄 / 오른쪽: 오늘 핀 위치 3×3 (그린을 바라본 방향 — 위가 뒤, 아래가 앞) */
+  .score { align-items: stretch; }
+  .cnts { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .cnts .counter { flex: 1 1 auto; min-width: 0; }
+  .pingrid { flex: 0 0 132px; display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 1fr; gap: 3px;
+    background: #2a5e3a; border-radius: 10px; padding: 3px; }
+  .pingrid button { padding: 0; font-size: 12px; border-radius: 6px; min-height: 28px; touch-action: none; background: #1d3d2a; }
+  .pingrid button.on { background: #ffd76a; color: #3a2a00; }
+  @media (max-width: 330px) { .pingrid { flex-basis: 108px; } .pingrid button { font-size: 11px; } }
   .counter button { flex: 1 1 50px; max-width: 64px; }
   .counter b { flex: 0 1 auto; }
   @media (max-width: 380px) { .counter button { min-width: 36px; padding: 4px 2px; } .counter b { min-width: 24px; font-size: 22px; } .counter span { font-size: 12px; padding-left: 2px; } }
@@ -163,13 +167,6 @@
       <div><span>뒤</span><b id="dB">—</b></div>
     </div>
   </div>
-  <div class="pinrow">
-    <span class="muted">핀</span>
-    <button data-pin="0">앞</button>
-    <button data-pin="50">중</button>
-    <button data-pin="100">뒤</button>
-    <input type="range" id="pinSlider" min="0" max="100" step="5" value="50" aria-label="핀 위치 미세조정">
-  </div>
   <div class="live">
     <div>홀 전장 (티→핀)<br><b id="dHole">—</b></div>
     <div>이번 샷 비거리 (직전 지점→나)<br><b id="dLast">—</b></div>
@@ -177,8 +174,11 @@
   <div class="lastshot" id="lastShot"></div>
   <div class="shots" id="shotList"></div>
   <div class="score">
-    <div class="counter"><span id="strokesLbl" style="cursor:pointer">타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
-    <div class="counter" id="puttBox"><span id="puttsLbl" style="cursor:pointer">퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
+    <div class="cnts">
+      <div class="counter"><span id="strokesLbl" style="cursor:pointer">타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
+      <div class="counter" id="puttBox"><span id="puttsLbl" style="cursor:pointer">퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
+    </div>
+    <div class="pingrid" id="pinGrid" aria-label="오늘 핀 위치 (골퍼가 그린을 바라본 방향)"><button data-pin="100" data-lr="-1">뒤왼</button><button data-pin="100" data-lr="0">뒤중</button><button data-pin="100" data-lr="1">뒤오른</button><button data-pin="50" data-lr="-1">중왼</button><button data-pin="50" data-lr="0">중중</button><button data-pin="50" data-lr="1">중오른</button><button data-pin="0" data-lr="-1">앞왼</button><button data-pin="0" data-lr="0">앞중</button><button data-pin="0" data-lr="1">앞오른</button></div>
   </div>
   <button id="holeDoneBtn" class="primary" style="display:none"></button>
   <div class="actions">
@@ -198,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v35';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v36';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -239,7 +239,7 @@ const holeDef = () => course() && course().holes[holeIdx()];
 const holeRec = () => round() && round().holes[holeIdx()];
 
 function pinPoint() {
-  return holeDef() ? pinOf(holeDef().green, holeRec().pin) : null;
+  return holeDef() ? pinOf(holeDef().green, holeRec().pin, holeRec().pinLR, pinFrom(holeDef(), holeRec())) : null;
 }
 
 // ---------- 지도 ----------
@@ -333,6 +333,7 @@ function repairRound() {
     const h = rd.holes[i] = rd.holes[i] && typeof rd.holes[i] === 'object' ? rd.holes[i] : {};
     h.strokes = Math.max(0, parseInt(h.strokes, 10) || 0); h.putts = Math.max(0, parseInt(h.putts, 10) || 0);
     h.pin = isFinite(+h.pin) && h.pin !== null ? +h.pin : 50;
+    h.pinLR = [-1, 0, 1].includes(+h.pinLR) ? +h.pinLR : 0;
     if (!Array.isArray(h.shots)) h.shots = [];
   }
   rd.hole = Math.min(17, Math.max(0, parseInt(rd.hole, 10) || 0));
@@ -389,9 +390,8 @@ function renderHole($, c, h, r) {
   hb.style.display = done ? 'block' : 'none';
   document.querySelector('#panel .actions').style.display = done ? 'none' : '';
   if (done) hb.innerHTML = hi < 17 ? `✅ ${hi + 1}번홀 끝 · ${r.strokes}타 ${scoreName(r.strokes, h.par)} — <b>${hi + 2}번홀로 ▶</b>` : `🏁 18번홀 끝 · ${r.strokes}타 — <b>라운드 끝내기</b>`;
-  $('pinLbl').textContent = `핀까지 (${unitLbl()}) · ${pinName(r.pin)}`;
-  document.querySelectorAll('[data-pin]').forEach(b => b.classList.toggle('on', +b.dataset.pin === r.pin));
-  $('pinSlider').value = r.pin;
+  $('pinLbl').textContent = `핀까지 (${unitLbl()}) · ${pinName(r.pin, r.pinLR)}`;
+  document.querySelectorAll('[data-pin]').forEach(b => b.classList.toggle('on', +b.dataset.pin === r.pin && +b.dataset.lr === (r.pinLR || 0)));
 
   const shots = r.shots;
   // 홀 전장: 기록한 티샷 지점(없으면 등록된 티, 그것도 없으면 현재 위치) → 핀
@@ -480,7 +480,7 @@ function autoStrokes(r) {
   if (r.manual || r.shots.length < 2) return;
   r.strokes = (r.shots.length - 1) + r.putts;
 }
-function pinName(v) { return v === 0 ? '앞핀' : v === 50 ? '중핀' : v === 100 ? '뒤핀' : `핀 ${v}%`; }
+function pinName(v, lr) { return (v === 0 ? '앞핀' : v === 50 ? '중핀' : v === 100 ? '뒤핀' : `핀 ${v}%`) + (lr < 0 ? ' 왼쪽' : lr > 0 ? ' 오른쪽' : ''); }
 function shotSummary(shots, pin) {
   if (!shots.length) return '티잉그라운드에서 「티샷 위치」를 누르세요';
   const parts = [];
@@ -494,11 +494,22 @@ function shotSummary(shots, pin) {
 }
 
 // 그린 점·핀·샷 궤적(샷마다 「n샷 거리 · 남은 거리」 표시) — 진행 중 라운드와 지난 라운드 다시보기가 같이 사용
-function pinOf(g, pinPct) {
+function pinOf(g, pinPct, lr, from) {   // lr: -1 왼쪽 / 0 / 1 오른쪽 (그린을 바라본 골퍼 기준), from: 티(앞·뒤 미등록 시 방향용)
   if (!g || !g.c) return null;
+  if (pinPct == null) pinPct = 50;
   const f = g.f || g.c, b = g.b || g.c;
-  return pinPct <= 50 ? lerp(f, g.c, pinPct / 50) : lerp(g.c, b, (pinPct - 50) / 50);
+  let p = pinPct <= 50 ? lerp(f, g.c, pinPct / 50) : lerp(g.c, b, (pinPct - 50) / 50);
+  const ax = g.f && g.b ? [g.f, g.b] : from ? [from, g.c] : null;
+  if (lr && ax) {
+    const k = Math.cos(g.c[0] * Math.PI / 180), ex = (ax[1][1] - ax[0][1]) * 111320 * k, ny = (ax[1][0] - ax[0][0]) * 110540, L = Math.hypot(ex, ny);
+    if (L > 0) {
+      const half = Math.max(5, Math.min(12, (g.f && g.b ? haversine(g.f, g.b) / 2 : 12) * 0.6)), dm = lr * half;   // 그린 반폭쯤
+      p = [p[0] + (-ex / L) * dm / 110540, p[1] + (ny / L) * dm / (111320 * k)];   // 오른쪽 = (북→동) 시계방향 90°
+    }
+  }
+  return p;
 }
+const pinFrom = (hd, rec) => hd && hd.tee || rec && rec.shots[0] && rec.shots[0].p || null;
 function drawHole(g, pin, shots) {
   g = g || {};
   const dot = (p, color, label) => L.circleMarker(p, { radius: 6, color: '#000', weight: 1, fillColor: color, fillOpacity: 1 })
@@ -522,7 +533,7 @@ function fitTrack(pts) { if (pts.length > 1) map.fitBounds(pts, { padding: [70, 
 let review = null;   // { hi, i } — store.history 인덱스, 홀 인덱스
 function showHoleTrack(hi, i) {
   const rd = store.history[hi], c = rd && rd.courseSnapshot; if (!c) return;
-  const rec = rd.holes[i], g = c.holes[i].green || {}, pin = pinOf(g, rec.pin);
+  const rec = rd.holes[i], g = c.holes[i].green || {}, pin = pinOf(g, rec.pin, rec.pinLR, pinFrom(c.holes[i], rec));
   review = { hi, i };
   closeSheet(); drawLayers();
   fitTrack([...rec.shots.map(s => s.p), ...(pin ? [pin] : [])]);
@@ -553,7 +564,7 @@ function drawLayers() {
   layers.clearLayers();
   if (review) {
     const rd = store.history[review.hi], rec = rd.holes[review.i], g = rd.courseSnapshot.holes[review.i].green;
-    drawHole(g, pinOf(g, rec.pin), rec.shots); return;
+    drawHole(g, pinOf(g, rec.pin, rec.pinLR, pinFrom(rd.courseSnapshot.holes[review.i], rec)), rec.shots); return;
   }
   const h = holeDef(); if (!h) return;
   const pin = pinPoint();
@@ -670,9 +681,8 @@ document.getElementById('dPin').parentElement.addEventListener('click', () => {
 });
 
 // ---------- 핀 위치 ----------
-function setPin(v) { const r = holeRec(); if (!r) return; r.pin = v; save(); render(); }
-document.querySelectorAll('[data-pin]').forEach(b => b.addEventListener('click', () => setPin(+b.dataset.pin)));
-document.getElementById('pinSlider').addEventListener('input', e => setPin(+e.target.value));
+function setPin(v, lr) { const r = holeRec(); if (!r) return; r.pin = v; r.pinLR = lr || 0; save(); render(); }
+document.querySelectorAll('[data-pin]').forEach(b => bindTap(b, () => { if (navigator.vibrate) navigator.vibrate(10); setPin(+b.dataset.pin, +b.dataset.lr); }));
 
 // ---------- 타수/퍼트 ----------
 function bindTap(el, fn) {   // 터치: 떼는 순간 실행(20px 넘게 움직이면 무시), 그 뒤 오는 click은 건너뜀
@@ -1431,7 +1441,7 @@ function showCard(rd, c, hi) {   // hi: 지난 라운드 인덱스(있으면 홀
 function shotFlowSvg(rec, hd) {
   const shots = rec && rec.shots || [];
   if (shots.length < 2) return '';
-  const g = hd && hd.green && hd.green.c ? hd.green : null, pin = g ? pinOf(g, rec.pin == null ? 50 : rec.pin) : null;
+  const g = hd && hd.green && hd.green.c ? hd.green : null, pin = g ? pinOf(g, rec.pin, rec.pinLR, pinFrom(hd, rec)) : null;
   const n = shots.length - 1, last = shots[n].p;
   const onGreen = !!(g && haversine(last, g.c) <= greenRadius(g)) || (!g && rec.putts > 0);
   const legs = shots.slice(1).map((s, k) => haversine(shots[k].p, s.p));
@@ -1565,7 +1575,7 @@ async function holeImageURL(rec, hd, meta) {   // meta: { i, course, date } → 
   if (holeImgCache.has(key)) return holeImgCache.get(key);
   const W = IMG_W, H = IMG_H, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d'); if (!ctx) return null;
-  const g = hd.green && hd.green.c ? hd.green : null, pin = g ? pinOf(g, rec.pin == null ? 50 : rec.pin) : null;
+  const g = hd.green && hd.green.c ? hd.green : null, pin = g ? pinOf(g, rec.pin, rec.pinLR, pinFrom(hd, rec)) : null;
   const shots = rec.shots.map(s => s.p), n = shots.length - 1;
   const L = holeImageLayout([...shots, ...(pin ? [pin] : [])], W, H, 78);
   // 1) 위성 타일 (회전·확대해서 깔기)
