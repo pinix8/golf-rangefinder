@@ -150,6 +150,7 @@
   <button class="fab" id="centerBtn" style="top:10px">◎ 내 위치</button>
   <button class="fab" id="fitBtn" style="top:50px">⛳ 홀 보기</button>
   <button class="fab" id="endBtn" style="top:90px;display:none">🏁 끝내기</button>
+  <button class="fab" id="photoBtn" style="top:130px;display:none">📷 샷 사진</button>
 </div>
 
 <div id="panel">
@@ -197,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v34';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v35';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -366,11 +367,11 @@ function render() {
     $('holeTitle').innerHTML = '<b>골프 거리측정</b><small>☰ 메뉴에서 코스를 선택하세요</small>';
     ['dPin', 'dF', 'dC', 'dB', 'dHole', 'dLast'].forEach(id => { $(id).textContent = '—'; });
     $('strokes').textContent = 0; $('putts').textContent = 0; $('shotList').textContent = '';
-    $('lastShot').style.display = 'none'; $('endBtn').style.display = 'none'; $('holeDoneBtn').style.display = 'none'; $('panel').classList.remove('nogreen');
+    $('lastShot').style.display = 'none'; $('endBtn').style.display = 'none'; $('photoBtn').style.display = 'none'; $('holeDoneBtn').style.display = 'none'; $('panel').classList.remove('nogreen');
     return;
   }
   $('strokes').textContent = r.strokes; $('putts').textContent = r.putts;   // 아래에서 오류가 나도 입력한 숫자는 보이게
-  $('endBtn').style.display = '';
+  $('endBtn').style.display = ''; $('photoBtn').style.display = '';
   try { renderHole($, c, h, r); } catch (e) { reportError(e); }
 }
 function renderHole($, c, h, r) {
@@ -789,6 +790,7 @@ function swipeEnd(e) {
 });
 document.getElementById('centerBtn').addEventListener('click', () => { if (me) map.setView(me, Math.max(map.getZoom(), 17)); });
 document.getElementById('fitBtn').addEventListener('click', fitHole);
+document.getElementById('photoBtn').addEventListener('click', () => openPhotos());
 document.getElementById('endBtn').addEventListener('click', () => { if (round()) endRoundSheet(); });
 
 // ---------- 시트(메뉴/코스/스코어카드) ----------
@@ -841,7 +843,8 @@ function openMenu() {
   if (review) closeReview();
   const rd = round();
   openSheet(`<h3>메뉴</h3><div class="list">
-    ${rd ? `<button data-act="card">📋 스코어카드</button>
+    ${rd ? `<button data-act="photos">📷 홀별 샷 사진 <span class="muted">(위성사진·공 궤적)</span></button>
+            <button data-act="card">📋 스코어카드</button>
             <button data-act="ojang">🎲 오장게임 ${rd.game ? '(진행 중 — 이어서)' : '(4인 타당 정산)'}</button>
             <button data-act="updown">🤝 팀 업다운 ${rd.updown ? '(진행 중 — 이어서)' : '(2팀 매홀 승부)'}</button>
             ${canSwapNines(course()) ? `<button data-act="nineChange">🔄 출발 코스 바꾸기 <span class="muted">· 지금 ${esc(course().nines.join(' → '))}</span></button>` : ''}
@@ -895,6 +898,7 @@ box.addEventListener('click', e => {
   else if (a === 'flowAll') flowAll(t);
   else if (a === 'flowHole') { if (flowCtx) flowSheet(flowCtx.rd, flowCtx.c, flowCtx.hi, +id); }
   else if (a === 'holeImgSave') { if (flowCtx) saveHoleImg(flowCtx.rd, flowCtx.c, +id); }
+  else if (a === 'photos') openPhotos();
   else if (a === 'unit') { store.unit = store.unit === 'm' ? 'yd' : 'm'; save(); render(); openMenu(); }
   else if (a === 'backup') showBackup();
   else if (a === 'newCourse') newCourse();
@@ -1420,7 +1424,7 @@ function showCard(rd, c, hi) {   // hi: 지난 라운드 인덱스(있으면 홀
     <table class="card"><tr><th>홀</th><th>Par</th><th>타수</th><th>퍼트</th><th>±</th><th>최장샷</th></tr>${o.html}${n.html}
     <tr class="sum"><td>합계</td><td>${o.par + n.par}</td><td>${tot || ''}</td><td>${o.pt + n.pt || ''}</td><td>${played.length ? (diff > 0 ? '+' : '') + diff : ''}</td><td></td></tr></table>
     <p class="muted">최장샷 단위: ${unitLbl()} (기록된 샷 위치 기준)${rd === round() ? ' · 홀을 누르면 그 홀로 이동해 타수·퍼트를 고칠 수 있습니다' : hi != null ? ' · 🗺️ 홀을 누르면 지도에서 샷 궤적·거리를 봅니다' : ''}</p>
-    <div class="list"><button data-act="flowAll" data-id="${hi == null ? '' : hi}" class="primary">🏌️ 홀별 샷 흐름 한눈에 보기</button>${rd.game ? (hi != null ? `<button data-g="histTbl" data-i="${hi}">🎲 오장게임 정산표</button>` : '<button data-act="ojang">🎲 오장게임</button>') : ''}${rd.updown ? (hi != null ? `<button data-ud="hist" data-i="${hi}">🤝 팀 업다운 결과</button>` : '<button data-act="updown">🤝 팀 업다운</button>') : ''}${hi != null ? `${hasBet(rd) ? `<button data-act="betDel" data-id="${hi}">🎲 내기 기록만 지우기 <span class="muted">· 스코어·샷은 유지</span></button>` : ''}<button data-act="history">← 지난 라운드 목록</button><button data-act="histDel" data-id="${hi}">🗑️ 이 라운드 전체 삭제</button>` : ''}<button data-act="close">닫기</button></div>`);
+    <div class="list"><button data-act="flowAll" data-id="${hi == null ? '' : hi}" class="primary">📷 홀별 샷 사진 한눈에 보기</button>${rd.game ? (hi != null ? `<button data-g="histTbl" data-i="${hi}">🎲 오장게임 정산표</button>` : '<button data-act="ojang">🎲 오장게임</button>') : ''}${rd.updown ? (hi != null ? `<button data-ud="hist" data-i="${hi}">🤝 팀 업다운 결과</button>` : '<button data-act="updown">🤝 팀 업다운</button>') : ''}${hi != null ? `${hasBet(rd) ? `<button data-act="betDel" data-id="${hi}">🎲 내기 기록만 지우기 <span class="muted">· 스코어·샷은 유지</span></button>` : ''}<button data-act="history">← 지난 라운드 목록</button><button data-act="histDel" data-id="${hi}">🗑️ 이 라운드 전체 삭제</button>` : ''}<button data-act="close">닫기</button></div>`);
 }
 // ---------- 샷 흐름도 — 티박스 → 1샷(거리) → 2샷 → … → 그린·홀컵을 한 줄 그림으로 (홀 완료·스코어카드·다시보기) ----------
 // rec: 라운드의 홀 기록(shots[0]=티 위치, shots[k]=k번째 샷 후 공 위치), hd: 코스의 홀 정보(green·par)
@@ -1475,16 +1479,27 @@ function flowSheet(rd, c, hi, only) {   // 홀별 샷 흐름 모아 보기 (only
   const items = idx.map(i => {
     const rec = rd.holes[i], hd = c.holes[i], svg = shotFlowSvg(rec, hd);
     const go = live ? `data-act="goto" data-id="${i}"` : rec.shots.length ? `data-act="histHole" data-id="${hi}" data-k="${i}"` : '';
-    return `<div style="margin:8px 0;${go ? 'cursor:pointer' : ''}" ${go}><p style="margin:0 0 4px">${flowTitle(rec, hd, i)}</p>${svg ? `<div class="himg" data-i="${i}">${svg}</div>` : '<p class="muted" style="margin:0">샷 위치 기록 없음 (타수만 입력)</p>'}</div>`;
+    return `<div style="margin:8px 0;${go ? 'cursor:pointer' : ''}" ${go}><p style="margin:0 0 4px">${flowTitle(rec, hd, i)}</p>${svg ? `<div class="himg" data-i="${i}">${svg}</div>` : '<p class="muted" style="margin:0">📍 샷 위치 기록 없음 — 타수만 입력해서 사진이 없습니다</p>'}</div>`;
   }).join('');
   const nav = only != null ? `<div class="row"><button data-act="flowHole" data-id="${(only + 17) % 18}">◀</button><button data-act="flowAll">전체 홀 보기</button><button data-act="flowHole" data-id="${(only + 1) % 18}">▶</button></div>`
     + (rd.holes[only].shots.length >= 2 ? `<div class="list" style="margin:4px 0"><button data-act="holeImgSave" data-id="${only}">📷 이 홀 사진 저장·공유 <span class="muted">(카톡 등)</span></button></div>` : '') : '';
   flowCtx = { rd, c, hi };
-  openSheet(`<h3>🏌️ ${only != null ? '샷 흐름' : '홀별 샷 흐름'} · ${esc(c.name)}</h3>
-    ${nav}${items || '<p class="muted">아직 기록한 홀이 없습니다. 티에서 「티샷 위치」, 공 있는 곳에서 「샷 위치 기록」을 누르면 그려집니다.</p>'}
+  // 라운드 전체에서 타수는 넣었지만 샷 위치가 없어 사진이 없는 홀 (한 홀 보기에서도 알려 줌)
+  const noShot = rd.holes.map((h, i) => i).filter(i => (rd.holes[i].strokes || rd.holes[i].putts) && rd.holes[i].shots.length < 2);
+  const anyPhoto = rd.holes.some(h => h.shots.length >= 2);
+  const how = live && (noShot.length || !anyPhoto) ? `<p style="color:var(--warn);font-size:13px;margin:4px 0">📍 ${!anyPhoto ? '아직 사진이 있는 홀이 없습니다' : noShot.map(i => i + 1).join('·') + '번홀은 샷 위치를 기록하지 않아 사진이 없습니다'}.<br>티에서 「⛳ 티샷 위치」, 공 있는 곳마다 「● 샷 위치 기록」을 누르면 그 홀 위성사진에 공 궤적이 그려집니다.</p>` : '';
+  openSheet(`<h3>📷 ${only != null ? '샷 사진' : '홀별 샷 사진'} · ${esc(c.name)}</h3>
+    ${how}${nav}${items || '<p class="muted">아직 기록한 홀이 없습니다. 티에서 「⛳ 티샷 위치」, 공 있는 곳마다 「● 샷 위치 기록」을 누르면 그 홀 위성사진에 공 궤적이 그려집니다.</p>'}
     <p class="muted">그 홀 위성사진 위에 티(왼쪽)→그린(오른쪽)으로 표시 · 거리는 기록한 위치 사이 직선거리${live ? ' · 누르면 그 홀로 이동' : hi != null ? ' · 누르면 지도에서 궤적' : ''}</p>
     <div class="list">${hi != null ? `<button data-act="histCard" data-id="${hi}">← 스코어카드로</button>` : live ? '<button data-act="card">📋 스코어카드</button>' : ''}<button data-act="close">닫기</button></div>`);
   upgradeHoleImgs(box, rd, c);
+}
+function openPhotos() {
+  const rd = round(), c = course();
+  if (!rd || !c) { if (store.history.length) showHistory(); else toast('라운드에서 샷 위치를 기록하면 홀별 사진이 만들어집니다', 3000); return; }
+  const cur = holeIdx();
+  for (let k = 0; k < 18; k++) { const i = (cur - k + 18) % 18; if (rd.holes[i].shots.length >= 2) { flowSheet(rd, c, null, i); return; } }
+  flowSheet(rd, c, null);
 }
 function flowAll(t) {   // 스코어카드 버튼(data-id=지난 라운드 번호) 또는 흐름도 안의 「전체 홀 보기」
   const id = t.dataset.id;
@@ -1505,7 +1520,7 @@ function showFlowCard(i) {
     document.querySelector('.mapwrap').appendChild(el);
   }
   el.dataset.i = i;
-  el.innerHTML = `<div style="margin-bottom:4px">✅ ${flowTitle(rec, hd, i)} <span class="muted">· 누르면 크게</span></div>${(sv => sv ? `<div class="himg" data-i="${i}">${sv}</div>` : '<span class="muted">샷 위치 기록 없음</span>')(shotFlowSvg(rec, hd))}`;
+  el.innerHTML = `<div style="margin-bottom:4px">✅ ${flowTitle(rec, hd, i)} <span class="muted">· 누르면 크게</span></div>${(sv => sv ? `<div class="himg" data-i="${i}">${sv}</div>` : '<span style="color:var(--warn)">📍 샷 위치를 기록하지 않아 사진이 없습니다 — 다음 홀은 티에서 「⛳ 티샷 위치」부터 눌러 보세요</span>')(shotFlowSvg(rec, hd))}`;
   el.style.display = 'block';
   upgradeHoleImgs(el, rd, c);
   clearTimeout(flowCardTimer); flowCardTimer = setTimeout(() => { el.style.display = 'none'; }, 7000);
