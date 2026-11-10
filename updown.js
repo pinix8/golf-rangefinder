@@ -34,7 +34,7 @@ function udSheet(rd, c, hi) {   // hi: 지난 라운드 인덱스(있으면 보�
     + (i === 8 ? `<tr class="sum"><td colspan="6">전반 ${run[8].a}승 / ${run[8].b}승 · ${udLabel(u, run[8].diff)}</td></tr>` : '')).join('');
   const team = k => live ? `<input type="text" data-ud="team" data-k="${k}" value="${esc(u.teams[k])}" maxlength="8" style="width:100%;box-sizing:border-box;padding:6px">` : esc(u.teams[k]);
   const y = box.scrollTop;
-  openSheet(`<h3>🤝 팀 업다운 · ${esc(c.name)}</h3>
+  openSheet(`${live ? gameTabs('updown') : ''}<h3>🤝 팀 업다운 · ${esc(c.name)}</h3>
     <div class="row"><span style="flex:0 0 auto" class="muted">팀명</span>${team(0)}<span style="flex:0 0 auto">vs</span>${team(1)}</div>
     <div style="background:#0d2016;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:17px;text-align:center">
       ${last ? `<b>${udLabel(u, last.diff)}</b> <span class="muted">(${esc(u.teams[0])} ${last.a}승 · ${esc(u.teams[1])} ${last.b}승)</span>` : '<span class="muted">홀마다 이긴 팀을 누르세요</span>'}</div>

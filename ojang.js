@@ -74,7 +74,7 @@ function ojSetup() {
   const g = round().game || OJ_DEFAULT, c = course();
   const sp = Object.entries(g.special || {}).filter(([, m]) => m > 1);
   const num = (id, v, step = 1) => `<input type="number" id="${id}" value="${v}" min="0" step="${step}" inputmode="numeric" style="font:inherit;background:var(--btn);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;width:100%;box-sizing:border-box">`;
-  ojRender(`<h3>🎲 오장게임 설정</h3>
+  ojRender(`${gameTabs('ojang')}<h3>🎲 오장게임 설정</h3>
     <p class="muted">4명 타당 게임 — 홀마다 모든 쌍끼리 타수 차이 × 타당 금액. 배판 조건(파4·5 트리플 이상, 파3 더블 이상, 3명 동타, 버디·이글)이 나오면 그 홀은 배판 금액.</p>
     <b>플레이어</b>
     ${g.names.map((n, k) => `<div class="row"><span style="flex:0 0 22px">${k + 1}</span><input type="text" id="ojName${k}" value="${esc(n)}" maxlength="8"></div>`).join('')}
@@ -144,7 +144,7 @@ function ojHole() {
       ${g.names.map((n, k) => `<tr><td>${esc(n)}</td><td>${h.s[k]}</td><td>${r.adj[k]}</td><td class="${ojCls(r.delta[k])}">${ojMoney(r.delta[k])}</td><td><b class="${ojCls(all.total[k])}">${ojMoney(all.total[k])}</b></td></tr>`).join('')}
       </table><p class="muted" style="margin:4px 0 0">단위: 원 (＋받음 / −냄)</p></div>`
     : `<p class="muted">4명 타수를 모두 넣으면 자동 계산됩니다. 「−/＋」를 처음 누르면 파(${par})로 들어갑니다.</p>`;
-  ojRender(`<div class="row" style="flex-wrap:nowrap"><button data-g="go" data-d="-1" style="flex:0 0 44px">◀</button>
+  ojRender(`${gameTabs('ojang')}<div class="row" style="flex-wrap:nowrap"><button data-g="go" data-d="-1" style="flex:0 0 44px">◀</button>
       <h3 style="margin:0;text-align:center">🎲 ${i + 1}번홀 · Par ${par}${tag ? `<br><small style="color:var(--warn)">${tag}</small>` : ''}</h3>
       <button data-g="go" data-d="1" style="flex:0 0 44px">▶</button></div>
     ${rows}${nearRow}${forceRow}${multRow}
@@ -161,7 +161,7 @@ function ojTable(rd, c, hi) {
   const body = all.holes.map((r, i) => `<tr ${hi == null ? `data-g="goHole" data-i="${i}" style="cursor:pointer"` : ''}><td>${i + 1}</td><td>${c.holes[i].par}</td>
     <td>${r.done ? `<span style="${r.unit !== g.won ? 'color:var(--warn);font-weight:700' : ''}">${(r.unit / 1000).toLocaleString('ko-KR')}</span>` : ''}</td>
     ${g.names.map((_, k) => `<td>${r.done ? `${g.holes[i].s[k]}<br><span class="${ojCls(r.delta[k])}">${ojMoney(r.delta[k] / 1000)}</span>` : ''}</td>`).join('')}</tr>`).join('');
-  openSheet(`<h3>📊 오장 정산표 · ${esc(c.name)}</h3><p class="muted">${new Date(rd.date).toLocaleDateString('ko-KR')} · ${all.played}/18홀 계산 · 단위 천원 · 칸: 타수 / 주고받은 금액</p>
+  openSheet(`${hi == null ? gameTabs('ojang') : ''}<h3>📊 오장 정산표 · ${esc(c.name)}</h3><p class="muted">${new Date(rd.date).toLocaleDateString('ko-KR')} · ${all.played}/18홀 계산 · 단위 천원 · 칸: 타수 / 주고받은 금액</p>
     <table class="card"><tr><th>홀</th><th>Par</th><th>1타</th>${g.names.map(n => `<th>${esc(n)}</th>`).join('')}</tr>${body}
     <tr class="sum"><td colspan="3">합계</td>${all.total.map(t => `<td>${ojMoney(t / 1000)}</td>`).join('')}</tr></table>
     <div style="margin-top:8px;font-size:16px">${g.names.map((n, k) => `<div>${esc(n)}: <b class="${ojCls(all.total[k])}">${ojMoney(all.total[k])}원</b></div>`).join('')}</div>

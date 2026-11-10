@@ -20,7 +20,8 @@
     --accent: #7ee08a; --warn: #ffcc4d; --bad: #ff6b6b; --btn: #1d3d2a;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body, button { touch-action: manipulation; }   /* 빠른 연타가 확대(더블탭 줌)로 먹히지 않게 */
+  html, body, button { touch-action: manipulation; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }   /* 빠른 연타가 확대(더블탭 줌)로 먹히지 않게 */
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
   body { display: flex; flex-direction: column; overscroll-behavior: none; }
@@ -39,19 +40,25 @@
   header .hole b { font-size: 20px; }
   header .hole small { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   header button { padding: 8px 10px; font-size: 16px; flex: 0 0 auto; }
-  html, body { overflow-x: hidden; }
+  html, body { overflow: hidden; }   /* 페이지 전체가 스크롤되면 아래 버튼 탭이 스크롤로 오인되어 먹힘 → 화면 한 장에 고정 */
+  body { height: 100vh; height: 100dvh; }
   .gps { font-size: 11px; padding: 3px 6px; border-radius: 6px; background: #333; white-space: nowrap; }
   .gps.good { background: #1f6b35; } .gps.mid { background: #7a6312; } .gps.bad { background: #7a1f1f; }
 
-  #map { flex: 1; min-height: 34vh; background: #000; }
+  #map { flex: 1; min-height: 120px; background: #000; }
   .banner { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 800;
     background: rgba(0,0,0,.78); padding: 8px 12px; border-radius: 10px; font-size: 14px; text-align: center; max-width: 92vw; }
   .banner .chips { margin-top: 6px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
   .banner .chips button { padding: 6px 10px; font-size: 13px; }
-  .mapwrap { position: relative; flex: 1; display: flex; flex-direction: column; }
+  .mapwrap { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .fab { position: absolute; right: 10px; z-index: 800; padding: 8px 10px; font-size: 13px; background: rgba(18,41,28,.9); }
 
-  #panel { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px); }
+  #panel { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 10px calc(env(safe-area-inset-bottom) + 14px); flex: 0 1 auto;
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* 큰 글씨 설정 등으로 패널이 화면보다 길면 패널만 스크롤되고, 타수·퍼트 줄은 항상 화면 아래에 붙어 보임 */
+  .score { position: sticky; bottom: calc(-1 * (env(safe-area-inset-bottom) + 14px)); z-index: 5; background: var(--panel);
+    padding: 4px 0 calc(env(safe-area-inset-bottom) + 14px); margin-bottom: calc(-1 * (env(safe-area-inset-bottom) + 14px)); }
+  #map { flex-shrink: 1; }
   .dist { display: flex; align-items: stretch; gap: 8px; }
   .big { flex: 1.3; text-align: center; background: #0d2016; border-radius: 12px; padding: 4px 0; }
   .big .lbl { font-size: 12px; color: var(--muted); }
@@ -79,9 +86,15 @@
   .counter { flex: 1; display: flex; align-items: center; justify-content: space-between; background: #0d2016;
     border-radius: 10px; padding: 3px; }
   .counter span { font-size: 13px; color: var(--muted); padding-left: 4px; white-space: nowrap; }
-  @media (max-width: 380px) { .counter button { min-width: 42px; } .counter b { min-width: 30px; } }
-  .counter b { font-size: 24px; min-width: 40px; text-align: center; cursor: pointer; text-decoration: underline dotted 1px; text-underline-offset: 5px; }
-  .counter button { min-width: 50px; min-height: 46px; padding: 4px 8px; font-size: 22px; font-weight: 700; user-select: none; -webkit-user-select: none; }
+  /* 좁은 화면·큰 글씨 설정에서도 ＋−가 화면 밖으로 밀리지 않게: 칸이 줄어듦 */
+  .score { flex-wrap: wrap; row-gap: 6px; }
+  .score .counter { min-width: 0; flex: 1 1 150px; }   /* 화면이 좁으면(큰 글씨 설정 포함) 타수·퍼트가 위아래 두 줄로 */
+  .counter button { flex: 1 1 50px; max-width: 64px; }
+  .counter b { flex: 0 1 auto; }
+  @media (max-width: 380px) { .counter button { min-width: 36px; padding: 4px 2px; } .counter b { min-width: 24px; font-size: 22px; } .counter span { font-size: 12px; padding-left: 2px; } }
+  .counter b { font-size: 24px; min-width: 40px; text-align: center; }
+  .score .counter b { cursor: pointer; text-decoration: underline dotted 1px; text-underline-offset: 5px; }   /* 누르면 직접 입력 화면 */
+  .counter button { touch-action: none; min-width: 50px; min-height: 46px; padding: 4px 8px; font-size: 22px; font-weight: 700; user-select: none; -webkit-user-select: none; }
 
   .sheet { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.6); display: none; }
   .sheet.show { display: flex; align-items: flex-end; }
@@ -152,14 +165,14 @@
   </div>
   <div class="lastshot" id="lastShot"></div>
   <div class="shots" id="shotList"></div>
+  <div class="score">
+    <div class="counter"><span id="strokesLbl" style="cursor:pointer">타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
+    <div class="counter" id="puttBox"><span id="puttsLbl" style="cursor:pointer">퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
+  </div>
   <div class="actions">
     <button id="teeBtn">⛳ 티샷 위치</button>
     <button id="shotBtn" class="primary">● 샷 위치 기록</button>
     <button id="undoBtn">↶ 취소</button>
-  </div>
-  <div class="score">
-    <div class="counter"><span id="strokesLbl" style="cursor:pointer">타수</span><button data-c="strokes" data-d="-1">−</button><b id="strokes">0</b><button data-c="strokes" data-d="1">＋</button></div>
-    <div class="counter" id="puttBox"><span id="puttsLbl" style="cursor:pointer">퍼트</span><button data-c="putts" data-d="-1">−</button><b id="putts">0</b><button data-c="putts" data-d="1">＋</button></div>
   </div>
 </div>
 
@@ -173,7 +186,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v28';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v30';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -311,6 +324,27 @@ function repairRound() {
     if (!Array.isArray(h.shots)) h.shots = [];
   }
   rd.hole = Math.min(17, Math.max(0, parseInt(rd.hole, 10) || 0));
+}
+
+// ---------- 터치 점검 (버튼이 먹통일 때: 휴대폰이 어떤 터치를 앱에 넘기는지 화면 위에 표시) ----------
+let tapDebug = null;
+function tapDebugToggle() {
+  if (tapDebug) { tapDebug.el.remove(); ['touchstart', 'pointerdown', 'pointerup', 'pointercancel', 'click'].forEach(t => document.removeEventListener(t, tapDebug.fn, true)); tapDebug = null; toast('터치 점검 끔'); return; }
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:6px;right:6px;top:calc(env(safe-area-inset-top) + 60px);z-index:3500;background:rgba(80,0,0,.88);color:#fff;font:12px/1.35 monospace;padding:6px 8px;border-radius:8px;pointer-events:none;white-space:pre-wrap';
+  document.body.appendChild(el);
+  const log = [];
+  const fn = e => {
+    const t = e.target, p = e.touches && e.touches[0] || e;
+    const name = t.id ? '#' + t.id : t.dataset && t.dataset.c ? `[${t.dataset.c} ${t.dataset.d}]` : (t.tagName || '') + (t.className && typeof t.className === 'string' ? '.' + t.className.split(' ')[0] : '');
+    log.unshift(`${new Date().toTimeString().slice(3, 8)} ${e.type.padEnd(13)} ${name} (${Math.round(p.clientX || 0)},${Math.round(p.clientY || 0)})`);
+    log.length = Math.min(log.length, 8);
+    el.textContent = `🔧 터치 점검 (${APP_VER} · 화면 ${innerWidth}×${innerHeight} · 스크롤 ${Math.round(scrollY)})
+타수 ＋를 누른 뒤 이 화면을 캡처해 주세요
+` + log.join('\n');
+  };
+  ['touchstart', 'pointerdown', 'pointerup', 'pointercancel', 'click'].forEach(t => document.addEventListener(t, fn, true));
+  tapDebug = { el, fn }; fn({ type: '시작', target: document.body });
 }
 
 // ---------- 화면 갱신 ----------
@@ -622,7 +656,19 @@ document.querySelectorAll('[data-pin]').forEach(b => b.addEventListener('click',
 document.getElementById('pinSlider').addEventListener('input', e => setPin(+e.target.value));
 
 // ---------- 타수/퍼트 ----------
-document.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', () => {
+function bindTap(el, fn) {   // 터치: 떼는 순간 실행(20px 넘게 움직이면 무시), 그 뒤 오는 click은 건너뜀
+  let down = null, viaTouch = 0;
+  el.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') down = { x: e.clientX, y: e.clientY }; });
+  el.addEventListener('pointercancel', () => { down = null; });
+  el.addEventListener('pointerup', e => {
+    if (!down || e.pointerType === 'mouse') return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y); down = null;
+    if (moved > 20) return;
+    viaTouch = Date.now(); fn();
+  });
+  el.addEventListener('click', () => { if (Date.now() - viaTouch < 1500) return; fn(); });
+}
+document.querySelectorAll('[data-c]').forEach(b => bindTap(b, () => {
   if (!needRound()) return;
   const r = holeRec(), k = b.dataset.c;
   if (navigator.vibrate) navigator.vibrate(10);
@@ -631,6 +677,7 @@ document.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', (
   else autoStrokes(r);
   if (k === 'putts' && r.putts > r.strokes) r.strokes = r.putts;
   save(); render();
+  const el = document.getElementById(k); el.style.color = 'var(--accent)'; setTimeout(() => { el.style.color = ''; }, 250);
 }));
 
 // ---------- 타수·퍼트 직접 입력 화면 — 숫자를 누르면 큰 버튼으로 바로 입력 (샷 기록 없이도, 지난 홀도) ----------
@@ -719,7 +766,19 @@ document.getElementById('endBtn').addEventListener('click', () => { if (round())
 // ---------- 시트(메뉴/코스/스코어카드) ----------
 const sheet = document.getElementById('sheet'), box = document.getElementById('sheetBox');
 function openSheet(html) { box.innerHTML = html; sheet.classList.add('show'); }
-function closeSheet() { sheet.classList.remove('show'); }
+function closeSheet() { sheet.classList.remove('show'); pendingGame = null; }
+// ---------- 내기 게임 바로 가기 — 첫 화면에서 오장게임·팀 업다운만 하는 경우 ----------
+let pendingGame = null;   // 'ojang' | 'updown' — 골프장을 고르면 라운드를 만들고 바로 그 게임 화면
+const GAME_NAME = { ojang: '🎲 오장게임', updown: '🤝 팀 업다운' };
+function openGame(g) { setup = null; showBanner(); if (g === 'ojang') ojOpen(); else udOpen(); }
+function gameStart(g) {
+  if (round() && course() && !roundIsStale()) { openGame(g); return; }   // 진행 중 라운드에서 바로
+  openHome(g);
+}
+function gameTabs(on) {   // 오장게임·팀 업다운·거리측정 화면 사이 한 번에 이동
+  const t = (act, label, k) => `<button data-act="${on === k ? 'noop' : act}" class="${on === k ? 'on' : ''}" style="padding:8px 2px;font-size:14px">${label}</button>`;
+  return `<div class="row" style="margin:0 0 8px;flex-wrap:nowrap">${t('ojang', '🎲 오장게임', 'ojang')}${t('updown', '🤝 팀 업다운', 'updown')}${t('close', '📍 거리측정', 'gps')}</div>`;
+}
 sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
 document.getElementById('menuBtn').addEventListener('click', openMenu);
 
@@ -764,6 +823,7 @@ function openMenu() {
     <button data-act="courses">🗺️ 코스 관리 (${canEdit() ? '파·' : ''}그린 위치)</button>
     <button data-act="history">📚 지난 라운드</button>
     <button data-act="autoHole">🔄 홀 자동 넘김 (GPS): <b>${autoHoleOn() ? '켜짐' : '꺼짐'}</b> <span class="muted">· 그린·티 위치가 등록된 홀에서 동작</span></button>
+    <button data-act="tapDebug">🔧 터치 점검 ${tapDebug ? '끄기' : '(버튼이 안 눌릴 때)'}</button>
     <button data-act="unit">📏 단위: ${store.unit === 'm' ? '미터(m)' : '야드(yd)'} → 변경</button>
     <button data-act="backup">💾 데이터 백업/복원</button>
     ${isStandalone() ? '' : '<button data-act="install">📲 휴대폰에 앱으로 설치</button>'}
@@ -784,7 +844,8 @@ box.addEventListener('click', e => {
   else if (a === 'finish') endRoundSheet();
   else if (a === 'finishSave') finishRound();
   else if (a === 'finishDrop') discardRound();
-  else if (a === 'start') openHome();
+  else if (a === 'start') openHome(pendingGame);
+  else if (a === 'home') { pendingGame = null; openHome(); }
   else if (a === 'menu') openMenu();
   else if (a === 'quickPick') quickPick(+id);
   else if (a === 'quickGo') quickStart(pick.i, +t.dataset.f, +t.dataset.b);
@@ -801,6 +862,7 @@ box.addEventListener('click', e => {
   else if (a === 'qsAuto') qsSet('auto');
   else if (a === 'qsClear') qsSet('clear');
   else if (a === 'qsHole') scoreSheet(qsHole + +id);
+  else if (a === 'tapDebug') { closeSheet(); tapDebugToggle(); }
   else if (a === 'unit') { store.unit = store.unit === 'm' ? 'yd' : 'm'; save(); render(); openMenu(); }
   else if (a === 'backup') showBackup();
   else if (a === 'newCourse') newCourse();
@@ -820,7 +882,9 @@ box.addEventListener('click', e => {
   else if (a === 'holeClear') { if (confirm('이 홀의 그린·티 위치를 지울까요?')) { holeDef().green = null; holeDef().tee = null; save(); render(); holeSheet(); } }
   else if (a === 'osmManual') { closeSheet(); newCourse(osmState.picked ? osmState.picked.name : ''); }
   else if (a === 'parApply') applyQuickPar(id);
-  else if (a === 'play') startRound(id);
+  else if (a === 'play') { const game = pendingGame; startRound(id, !!game); if (game && round() && round().courseId === id) openGame(game); }
+  else if (a === 'gameStart') gameStart(id);
+  else if (a === 'noop') { /* 지금 보고 있는 탭 */ }
   else if (a === 'edit') editCourse(id);
   else if (a === 'delCourse') { if (confirm('코스를 삭제할까요?')) { delete store.courses[id]; save(); manageCourses(); } }
   else if (a === 'histCard') { const h = store.history[+id]; showCard(h, h.courseSnapshot, +id); }
@@ -1126,8 +1190,9 @@ function recentClubs() {   // 최근 라운드한 골프장 — 같은 골프장
   });
   return out.slice(0, 6);
 }
-function openHome() {
+function openHome(game) {
   if (review) closeReview();
+  if (game) { openGameHome(game); return; }
   const rd = round(), stale = roundIsStale(), live = rd && course();
   const n = live ? playedHoles(rd) : 0, hist = store.history.length;
   const clubBtn = id => {
@@ -1146,9 +1211,25 @@ function openHome() {
     <div class="row"><input type="text" id="homeQ" placeholder="골프장 이름 입력 (예: 레이크사이드)" enterkeyhint="search" autocomplete="off"></div>
     <div id="homeOut"></div>
     ${ids.length ? `<p class="muted" style="margin:8px 0 0">최근 코스 — 누르면 출발 코스를 고르고 시작</p><div class="list">${ids.map(clubBtn).join('')}</div>` : ''}
+    <p style="margin:12px 0 4px"><b>🎲 내기 게임</b> <span class="muted">${live && !stale ? '· 진행 중 라운드에서' : '· 골프장만 고르면 바로 (거리측정 없이도 OK)'}</span></p>
+    <div class="row" style="margin:0">${['ojang', 'updown'].map(g => `<button data-act="gameStart" data-id="${g}" style="padding:12px 4px">${GAME_NAME[g]}${live && !stale && rd[g === 'ojang' ? 'game' : 'updown'] ? '<br><small class="muted">진행 중</small>' : ''}</button>`).join('')}</div>
     <div class="list" style="margin-top:10px">${hist ? `<button data-act="history">📚 지난 라운드 보기 <span class="muted">· ${hist}회 (스코어카드·샷 궤적)</span></button>` : ''}
       ${canEdit() ? '<button data-act="homeMore">🔎 상세 검색 (OpenStreetMap·직접 만들기)</button>' : ''}
       <button data-act="menu">☰ 전체 메뉴 (코스 관리·설정·백업)</button></div>`);
+  document.getElementById('homeQ').addEventListener('input', homeSearch);
+}
+function openGameHome(game) {   // 게임만: 골프장 고르기(파 정보로 배판 자동 판정) → 출발 코스 → 바로 게임 화면
+  const ids = recentClubs();
+  openSheet(`<h3>${GAME_NAME[game]} — 골프장 고르기</h3>
+    <p class="muted" style="margin:0 0 6px">홀별 파(Par)로 ${game === 'ojang' ? '배판(트리플·더블 이상, 버디 등)을 자동 판정' : '스코어표를 만듭니다'}합니다. 고르면 바로 게임 화면이 열리고, 그린 위치 설정은 건너뜁니다.</p>
+    <div class="row"><input type="text" id="homeQ" placeholder="골프장 이름 입력 (예: 레이크사이드)" enterkeyhint="search" autocomplete="off"></div>
+    <div id="homeOut"></div>
+    ${ids.length ? `<p class="muted" style="margin:8px 0 0">최근 코스</p><div class="list">${ids.map(id => {
+      const c = store.courses[id], k = dbIndexOf(c);
+      return k >= 0 ? `<button data-act="quickPick" data-id="${k}">⛳ ${esc(PAR_DB[k].name)}</button>` : `<button data-act="play" data-id="${id}">⛳ ${esc(c.name)}</button>`;
+    }).join('')}</div>` : ''}
+    <div class="list"><button data-act="home">← 시작 화면</button></div>`);
+  pendingGame = game;
   document.getElementById('homeQ').addEventListener('input', homeSearch);
 }
 function homeSearch() {
@@ -1238,8 +1319,9 @@ function pickNine(which, k) {
 }
 function quickStart(i, fk, bk) {
   const c = PAR_DB[i]; if (!c) return;
-  const id = findOrMakeDbCourse(c, c.nines[fk], c.nines[bk]);
-  startRound(id);
+  const game = pendingGame, id = findOrMakeDbCourse(c, c.nines[fk], c.nines[bk]);
+  startRound(id, !!game);
+  if (game && round() && round().courseId === id) openGame(game);
 }
 function applyNines(fk, bk) {   // 라운드 중 출발 코스 바꾸기 — 라운드 기록은 그대로, 코스(파·그린)만 교체
   const c = PAR_DB[pick.i], rd = round(); if (!c || !rd) return;
@@ -1265,12 +1347,17 @@ function archiveStaleRound() {
   store.round = null; save(); layers.clearLayers();
   if (played) toast(`지난 라운드(${name} · ${rd.holes.filter(h => h.strokes || h.putts || h.shots.length).length}홀 기록)는 ☰ → 「지난 라운드」에 저장했습니다`, 4000);
 }
-function startRound(id) {
+function startRound(id, quiet) {   // quiet: 내기 게임만 하는 경우 — 그린 설정 안내 생략
   if (roundIsStale()) archiveStaleRound();
-  if (round() && !confirm('진행 중인 라운드를 저장하지 않고 새로 시작할까요? (저장하려면 먼저 「라운드 종료」)')) return;
+  if (round()) {
+    const n = playedHoles(round());
+    if (n && !confirm(`진행 중인 라운드(${course() ? course().name : ''} · ${n}홀 기록)는 「지난 라운드」에 저장하고 새로 시작할까요?`)) return;
+    archiveStaleRound();
+  }
   store.round = { courseId: id, date: new Date().toISOString(), hole: 0,
     holes: Array.from({ length: 18 }, () => ({ strokes: 0, putts: 0, pin: 50, shots: [] })) };
   save(); closeSheet(); render(); fitHole();
+  if (quiet) return;
   if (!greenCount(id)) {
     toast('그린 위치를 아직 등록하지 않은 코스입니다. 지도에서 그린을 탭해 설정하세요', 3500);
     enterSetup('c');
@@ -1435,8 +1522,8 @@ function tidyStaleRound(onOpen) {
 setTimeout(() => tidyStaleRound(true), 400);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tidyStaleRound(false); });
 </script>
-<script src="ojang.js?v=21"></script>
-<script src="updown.js?v=21"></script>
+<script src="ojang.js?v=30"></script>
+<script src="updown.js?v=30"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="auth.js?v=21"></script>
 </body>
