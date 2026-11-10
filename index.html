@@ -113,6 +113,9 @@
   .holegrid div { background: #0d2016; border-radius: 8px; padding: 6px; font-size: 13px; }
   .muted { color: var(--muted); font-size: 12px; }
   /* 알림은 화면 위쪽(지도 위)에, 터치는 통과 — 알림이 떠 있는 동안 아래 버튼(타수·퍼트 등)이 먹통 되지 않게 */
+  #flowCard { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 1001; display: none; background: rgba(10,25,17,.94);
+    border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
+  .shots, .lastshot { cursor: pointer; }
   .toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 64px); transform: translateX(-50%); z-index: 3000; background: rgba(0,0,0,.85);
     padding: 10px 16px; border-radius: 10px; display: none; font-size: 15px; pointer-events: none; width: max-content; max-width: 92vw; }
 
@@ -186,7 +189,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v30';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v33';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -233,7 +236,7 @@ function pinPoint() {
 // ---------- 지도 ----------
 const map = L.map('map', { zoomControl: false, attributionControl: true }).setView([37.5, 127.0], 16);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 21, maxNativeZoom: 19, attribution: 'Esri World Imagery'
+  maxZoom: 21, maxNativeZoom: 19, crossOrigin: true, attribution: 'Esri World Imagery'
 }).addTo(map);
 const layers = L.layerGroup().addTo(map);
 const meMarker = L.circleMarker([0, 0], { radius: 8, color: '#fff', weight: 3, fillColor: '#2b8cff', fillOpacity: 1 });
@@ -513,9 +516,10 @@ function showHoleTrack(hi, i) {
   let p = document.getElementById('reviewBar');
   if (!p) { p = document.createElement('div'); p.id = 'reviewBar'; document.body.appendChild(p); }
   p.innerHTML = `<b>${i + 1}번홀 · Par ${c.holes[i].par}</b> · ${rec.strokes || '-'}타${diff == null ? '' : ` (${diff > 0 ? '+' : ''}${diff})`} · ${rec.putts}퍼트
-    <div style="margin:4px 0">${legs ? legs + ` <span class="muted">(${unitLbl()})</span>` : '<span class="muted">기록된 샷 위치가 없습니다</span>'}</div>
+    <div style="margin:4px 0">${(sv => sv ? `<div class="himg" data-i="${i}">${sv}</div>` : '')(shotFlowSvg(rec, c.holes[i])) || (legs ? legs + ` <span class="muted">(${unitLbl()})</span>` : '<span class="muted">기록된 샷 위치가 없습니다</span>')}</div>
     <div class="row" style="margin:0"><button data-rv="prev">◀ 이전 홀</button><button data-rv="next">다음 홀 ▶</button><button data-rv="card">스코어카드</button><button data-rv="close">닫기</button></div>`;
   p.style.display = 'block';
+  upgradeHoleImgs(p, rd, c);
 }
 function closeReview() {
   review = null;
@@ -716,16 +720,20 @@ function qsSet(k, v) {
   if (navigator.vibrate) navigator.vibrate(15);
   save(); render(); scoreSheet(qsHole);
 }
+['shotList', 'lastShot'].forEach(id => document.getElementById(id).addEventListener('click', () => { if (round() && course()) flowSheet(round(), course(), null, holeIdx()); }));
 ['strokes', 'putts', 'strokesLbl', 'puttsLbl'].forEach(id => document.getElementById(id).addEventListener('click', () => scoreSheet()));
 
 // ---------- 홀 이동 ----------
 function goHole(d, auto) {
   const rd = round(); if (!rd) return;
+  const leaving = rd.hole;
   AH.cand = null;
   if (!auto && me) AH.pause = { p: me.slice(), t: Date.now() };   // 직접 옮겼으면 그 자리를 떠날 때까지 자동 넘김 멈춤
   rd.hole = (rd.hole + d + 18) % 18; measure = null;
   save(); render(); fitHole(); showBanner();
   if (!auto && !(holeDef().green && holeDef().green.c)) toast('이 홀의 그린 위치가 없습니다. ☰ → 그린 위치 설정', 2500);
+  if (d > 0) showFlowCard(leaving);   // 앞으로 넘어갈 때 방금 끝낸 홀 요약 그림
+  else { const fc = document.getElementById('flowCard'); if (fc) fc.style.display = 'none'; }
 }
 function swipeTip() {   // ◀▶ 버튼을 처음 쓸 때 한 번만: 쓸어 넘기기도 된다고 안내
   if (store.swipeTip) return;
@@ -863,6 +871,9 @@ box.addEventListener('click', e => {
   else if (a === 'qsClear') qsSet('clear');
   else if (a === 'qsHole') scoreSheet(qsHole + +id);
   else if (a === 'tapDebug') { closeSheet(); tapDebugToggle(); }
+  else if (a === 'flowAll') flowAll(t);
+  else if (a === 'flowHole') { if (flowCtx) flowSheet(flowCtx.rd, flowCtx.c, flowCtx.hi, +id); }
+  else if (a === 'holeImgSave') { if (flowCtx) saveHoleImg(flowCtx.rd, flowCtx.c, +id); }
   else if (a === 'unit') { store.unit = store.unit === 'm' ? 'yd' : 'm'; save(); render(); openMenu(); }
   else if (a === 'backup') showBackup();
   else if (a === 'newCourse') newCourse();
@@ -1181,26 +1192,12 @@ function recentCourseIds() {   // 최근 라운드한 코스 먼저, 나머지�
   Object.keys(store.courses).forEach(id => { if (!ids.includes(id)) ids.push(id); });
   return ids;
 }
-// 시작 화면 — 앱을 열 때마다: ① 진행 중 라운드 이어서/끝내기 ② 새 라운드(골프장 검색·최근 골프장 → 출발 코스 고르기) ③ 지난 라운드
-function recentClubs() {   // 최근 라운드한 골프장 — 같은 골프장의 여러 코스 조합은 하나로
-  const seen = new Set(), out = [];
-  recentCourseIds().forEach(id => {
-    const c = store.courses[id], k = c.src && c.src.startsWith('db:') ? c.src : id;
-    if (!seen.has(k)) { seen.add(k); out.push(id); }
-  });
-  return out.slice(0, 6);
-}
+// 시작 화면 — 앱을 열 때마다: ① 진행 중 라운드 이어서/끝내기 ② 새 라운드(골프장 검색 → 출발 코스) ③ 지난 라운드 보기 ④ 내기 게임
 function openHome(game) {
   if (review) closeReview();
   if (game) { openGameHome(game); return; }
   const rd = round(), stale = roundIsStale(), live = rd && course();
   const n = live ? playedHoles(rd) : 0, hist = store.history.length;
-  const clubBtn = id => {
-    const c = store.courses[id], k = dbIndexOf(c);
-    return k >= 0 ? `<button data-act="quickPick" data-id="${k}">⛳ ${esc(PAR_DB[k].name)} <span class="muted">· ${PAR_DB[k].nines.length > 1 ? '출발 코스 고르기' : '9홀'}</span></button>`
-      : `<button data-act="play" data-id="${id}">⛳ ${esc(c.name)} <span class="muted">· 그린 ${greenCount(id)}/18</span></button>`;
-  };
-  const ids = recentClubs();
   openSheet(`<h3>⛳ 골프 거리측정</h3>
     ${live ? `<div style="background:#0d2016;border-radius:10px;padding:8px 10px;margin-bottom:10px">
       <p style="margin:0 0 4px"><b>${stale ? '끝내지 않은 라운드' : '진행 중인 라운드'}</b> <span class="muted">· ${esc(course().name)} · ${holeIdx() + 1}번홀 · ${n ? n + '홀 기록' : '기록 없음'}</span></p>
@@ -1210,24 +1207,18 @@ function openHome(game) {
     <p style="margin:0 0 4px"><b>${live ? '⛳ 새 라운드 시작' : '⛳ 오늘 라운딩할 골프장'}</b></p>
     <div class="row"><input type="text" id="homeQ" placeholder="골프장 이름 입력 (예: 레이크사이드)" enterkeyhint="search" autocomplete="off"></div>
     <div id="homeOut"></div>
-    ${ids.length ? `<p class="muted" style="margin:8px 0 0">최근 코스 — 누르면 출발 코스를 고르고 시작</p><div class="list">${ids.map(clubBtn).join('')}</div>` : ''}
+    <div class="list" style="margin-top:8px"><button data-act="history">📚 지난 라운드 보기 <span class="muted">· ${hist ? hist + '회 (스코어카드·샷 궤적·내기 정산)' : '아직 없음'}</span></button></div>
     <p style="margin:12px 0 4px"><b>🎲 내기 게임</b> <span class="muted">${live && !stale ? '· 진행 중 라운드에서' : '· 골프장만 고르면 바로 (거리측정 없이도 OK)'}</span></p>
     <div class="row" style="margin:0">${['ojang', 'updown'].map(g => `<button data-act="gameStart" data-id="${g}" style="padding:12px 4px">${GAME_NAME[g]}${live && !stale && rd[g === 'ojang' ? 'game' : 'updown'] ? '<br><small class="muted">진행 중</small>' : ''}</button>`).join('')}</div>
-    <div class="list" style="margin-top:10px">${hist ? `<button data-act="history">📚 지난 라운드 보기 <span class="muted">· ${hist}회 (스코어카드·샷 궤적)</span></button>` : ''}
-      ${canEdit() ? '<button data-act="homeMore">🔎 상세 검색 (OpenStreetMap·직접 만들기)</button>' : ''}
+    <div class="list" style="margin-top:10px">${canEdit() ? '<button data-act="homeMore">🔎 상세 검색 (OpenStreetMap·직접 만들기)</button>' : ''}
       <button data-act="menu">☰ 전체 메뉴 (코스 관리·설정·백업)</button></div>`);
   document.getElementById('homeQ').addEventListener('input', homeSearch);
 }
 function openGameHome(game) {   // 게임만: 골프장 고르기(파 정보로 배판 자동 판정) → 출발 코스 → 바로 게임 화면
-  const ids = recentClubs();
   openSheet(`<h3>${GAME_NAME[game]} — 골프장 고르기</h3>
     <p class="muted" style="margin:0 0 6px">홀별 파(Par)로 ${game === 'ojang' ? '배판(트리플·더블 이상, 버디 등)을 자동 판정' : '스코어표를 만듭니다'}합니다. 고르면 바로 게임 화면이 열리고, 그린 위치 설정은 건너뜁니다.</p>
     <div class="row"><input type="text" id="homeQ" placeholder="골프장 이름 입력 (예: 레이크사이드)" enterkeyhint="search" autocomplete="off"></div>
     <div id="homeOut"></div>
-    ${ids.length ? `<p class="muted" style="margin:8px 0 0">최근 코스</p><div class="list">${ids.map(id => {
-      const c = store.courses[id], k = dbIndexOf(c);
-      return k >= 0 ? `<button data-act="quickPick" data-id="${k}">⛳ ${esc(PAR_DB[k].name)}</button>` : `<button data-act="play" data-id="${id}">⛳ ${esc(c.name)}</button>`;
-    }).join('')}</div>` : ''}
     <div class="list"><button data-act="home">← 시작 화면</button></div>`);
   pendingGame = game;
   document.getElementById('homeQ').addEventListener('input', homeSearch);
@@ -1408,7 +1399,227 @@ function showCard(rd, c, hi) {   // hi: 지난 라운드 인덱스(있으면 홀
     <table class="card"><tr><th>홀</th><th>Par</th><th>타수</th><th>퍼트</th><th>±</th><th>최장샷</th></tr>${o.html}${n.html}
     <tr class="sum"><td>합계</td><td>${o.par + n.par}</td><td>${tot || ''}</td><td>${o.pt + n.pt || ''}</td><td>${played.length ? (diff > 0 ? '+' : '') + diff : ''}</td><td></td></tr></table>
     <p class="muted">최장샷 단위: ${unitLbl()} (기록된 샷 위치 기준)${rd === round() ? ' · 홀을 누르면 그 홀로 이동해 타수·퍼트를 고칠 수 있습니다' : hi != null ? ' · 🗺️ 홀을 누르면 지도에서 샷 궤적·거리를 봅니다' : ''}</p>
-    <div class="list">${rd.game ? (hi != null ? `<button data-g="histTbl" data-i="${hi}">🎲 오장게임 정산표</button>` : '<button data-act="ojang">🎲 오장게임</button>') : ''}${rd.updown ? (hi != null ? `<button data-ud="hist" data-i="${hi}">🤝 팀 업다운 결과</button>` : '<button data-act="updown">🤝 팀 업다운</button>') : ''}${hi != null ? `${hasBet(rd) ? `<button data-act="betDel" data-id="${hi}">🎲 내기 기록만 지우기 <span class="muted">· 스코어·샷은 유지</span></button>` : ''}<button data-act="history">← 지난 라운드 목록</button><button data-act="histDel" data-id="${hi}">🗑️ 이 라운드 전체 삭제</button>` : ''}<button data-act="close">닫기</button></div>`);
+    <div class="list"><button data-act="flowAll" data-id="${hi == null ? '' : hi}" class="primary">🏌️ 홀별 샷 흐름 한눈에 보기</button>${rd.game ? (hi != null ? `<button data-g="histTbl" data-i="${hi}">🎲 오장게임 정산표</button>` : '<button data-act="ojang">🎲 오장게임</button>') : ''}${rd.updown ? (hi != null ? `<button data-ud="hist" data-i="${hi}">🤝 팀 업다운 결과</button>` : '<button data-act="updown">🤝 팀 업다운</button>') : ''}${hi != null ? `${hasBet(rd) ? `<button data-act="betDel" data-id="${hi}">🎲 내기 기록만 지우기 <span class="muted">· 스코어·샷은 유지</span></button>` : ''}<button data-act="history">← 지난 라운드 목록</button><button data-act="histDel" data-id="${hi}">🗑️ 이 라운드 전체 삭제</button>` : ''}<button data-act="close">닫기</button></div>`);
+}
+// ---------- 샷 흐름도 — 티박스 → 1샷(거리) → 2샷 → … → 그린·홀컵을 한 줄 그림으로 (홀 완료·스코어카드·다시보기) ----------
+// rec: 라운드의 홀 기록(shots[0]=티 위치, shots[k]=k번째 샷 후 공 위치), hd: 코스의 홀 정보(green·par)
+function shotFlowSvg(rec, hd) {
+  const shots = rec && rec.shots || [];
+  if (shots.length < 2) return '';
+  const g = hd && hd.green && hd.green.c ? hd.green : null, pin = g ? pinOf(g, rec.pin == null ? 50 : rec.pin) : null;
+  const n = shots.length - 1, last = shots[n].p;
+  const onGreen = !!(g && haversine(last, g.c) <= greenRadius(g)) || (!g && rec.putts > 0);
+  const legs = shots.slice(1).map((s, k) => haversine(shots[k].p, s.p));
+  // 그린(오른쪽 끝 고정, 폭 116) 안에 마지막 샷·홀컵, 나머지 샷은 왼쪽 구간에 거리 비례(최소 58px)로 — 샷이 많으면 그림을 넓힘
+  const free = onGreen ? n - 1 : n, W = Math.max(360, 60 + free * 80 + 128), H = 112, gx = W - 120, x0 = 26;
+  const xEnd = onGreen ? gx - 30 : gx - 24;
+  const fl = legs.slice(0, free), tot = fl.reduce((a, b) => a + b, 0) || 1;
+  let raw = fl.map(d => Math.max(d / tot * (xEnd - x0), 68));
+  const k = free ? (xEnd - x0) / raw.reduce((a, b) => a + b, 0) : 1; raw = raw.map(v => v * k);
+  const xs = [x0]; raw.forEach(v => xs.push(xs[xs.length - 1] + v));
+  if (onGreen) xs.push(gx + 30);
+  const ys = xs.map((_, i) => i === 0 ? 70 : i === n && onGreen ? 76 : i % 2 ? 32 : 70);
+  const box = (x, y, label, fill, color = '#fff', w = 40) => `<rect x="${x - w / 2}" y="${y - 11}" width="${w}" height="22" rx="5" fill="${fill}"/><text x="${x}" y="${y + 4.5}" fill="${color}" font-size="12" font-weight="700" text-anchor="middle">${label}</text>`;
+  let labels = '';   // 거리 글자는 상자 위에 덧그림(짧은 샷에서 상자에 가리지 않게), 어두운 테두리로 선 위에서도 읽힘
+  const arrow = (x1, y1, x2, y2, label, dash) => {
+    const dx = x2 - x1, dy = y2 - y1, L0 = Math.hypot(dx, dy) || 1, ux = dx / L0, uy = dy / L0;
+    const a = [x1 + ux * 22, y1 + uy * 13], b = [x2 - ux * 22, y2 - uy * 13];
+    const nx = uy, ny = -ux, sg = ny <= 0 ? 1 : -1;   // 선의 위쪽 법선 방향으로 띄움
+    const mx = (a[0] + b[0]) / 2 + nx * sg * 9, my = (a[1] + b[1]) / 2 + ny * sg * 9 + 4;
+    if (label) labels += `<text x="${mx}" y="${my}" fill="#e8f3ec" font-size="12" font-weight="700" text-anchor="middle" paint-order="stroke" stroke="#13301f" stroke-width="3.5" stroke-linejoin="round">${label}</text>`;
+    return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#6cc4ff" stroke-width="2" ${dash ? 'stroke-dasharray="4 3"' : ''} marker-end="url(#ah)"/>`;
+  };
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;max-width:520px;background:#13301f;border-radius:10px" role="img" aria-label="샷 흐름도">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6cc4ff"/></marker></defs>`;
+  s += `<rect x="${gx}" y="48" width="${W - gx - 4}" height="60" rx="12" fill="#3f9a58" opacity=".55"/><text x="${W - 10}" y="61" fill="#cfe" font-size="10" text-anchor="end">그린</text>`;
+  for (let i = 1; i <= n; i++) s += arrow(xs[i - 1], ys[i - 1], xs[i], ys[i], `${fmt(legs[i - 1])}${unitLbl()}`);
+  s += box(xs[0], ys[0], '티', '#2f7d45', '#fff', 30);
+  for (let i = 1; i <= n; i++) s += box(xs[i], ys[i], `${i}샷`, i === n && onGreen ? '#1f5a33' : '#2f7d45');
+  const cupX = W - 34, cupY = 76, left = pin ? haversine(last, pin) : null;
+  s += `<rect x="${cupX - 22}" y="${cupY - 11}" width="44" height="22" rx="5" fill="#ffd76a"/><text x="${cupX}" y="${cupY + 4.5}" fill="#3a2a00" font-size="12" font-weight="700" text-anchor="middle">홀컵</text>`;
+  const note = [rec.putts ? `퍼트 ${rec.putts}` : '', onGreen && left != null ? `핀 ${fmt(left)}${unitLbl()}` : ''].filter(Boolean).join(' · ');
+  if (!onGreen) s += arrow(xs[n], ys[n], cupX, cupY, left != null ? `남은 ${fmt(left)}${unitLbl()}` : '', true);
+  if (note) s += `<text x="${gx + (W - 4 - gx) / 2}" y="102" fill="#ffe9a8" font-size="11" font-weight="600" text-anchor="middle">${note}</text>`;
+  return s + labels + '</svg>';
+}
+function flowTitle(rec, hd, i) {
+  const par = hd.par, st = rec.strokes, extra = st ? st - (Math.max(0, rec.shots.length - 1) + rec.putts) : 0;
+  return `<b>${i + 1}번홀</b> · Par ${par}${st ? ` · <b>${st}타</b> ${scoreName(st, par)}` : ''}${rec.putts ? ` · ${rec.putts}퍼트` : ''}`
+    + (rec.shots.length >= 2 && extra > 0 ? ` <span class="muted">· 기록 안 한 샷·벌타 ${extra}</span>` : '');
+}
+let flowCtx = null;
+function flowSheet(rd, c, hi, only) {   // 홀별 샷 흐름 모아 보기 (only: 그 홀만)
+  const live = rd === round();
+  const idx = only != null ? [only] : rd.holes.map((h, i) => i).filter(i => rd.holes[i].strokes || rd.holes[i].shots.length);
+  const items = idx.map(i => {
+    const rec = rd.holes[i], hd = c.holes[i], svg = shotFlowSvg(rec, hd);
+    const go = live ? `data-act="goto" data-id="${i}"` : rec.shots.length ? `data-act="histHole" data-id="${hi}" data-k="${i}"` : '';
+    return `<div style="margin:8px 0;${go ? 'cursor:pointer' : ''}" ${go}><p style="margin:0 0 4px">${flowTitle(rec, hd, i)}</p>${svg ? `<div class="himg" data-i="${i}">${svg}</div>` : '<p class="muted" style="margin:0">샷 위치 기록 없음 (타수만 입력)</p>'}</div>`;
+  }).join('');
+  const nav = only != null ? `<div class="row"><button data-act="flowHole" data-id="${(only + 17) % 18}">◀</button><button data-act="flowAll">전체 홀 보기</button><button data-act="flowHole" data-id="${(only + 1) % 18}">▶</button></div>`
+    + (rd.holes[only].shots.length >= 2 ? `<div class="list" style="margin:4px 0"><button data-act="holeImgSave" data-id="${only}">📷 이 홀 사진 저장·공유 <span class="muted">(카톡 등)</span></button></div>` : '') : '';
+  flowCtx = { rd, c, hi };
+  openSheet(`<h3>🏌️ ${only != null ? '샷 흐름' : '홀별 샷 흐름'} · ${esc(c.name)}</h3>
+    ${nav}${items || '<p class="muted">아직 기록한 홀이 없습니다. 티에서 「티샷 위치」, 공 있는 곳에서 「샷 위치 기록」을 누르면 그려집니다.</p>'}
+    <p class="muted">그 홀 위성사진 위에 티(왼쪽)→그린(오른쪽)으로 표시 · 거리는 기록한 위치 사이 직선거리${live ? ' · 누르면 그 홀로 이동' : hi != null ? ' · 누르면 지도에서 궤적' : ''}</p>
+    <div class="list">${hi != null ? `<button data-act="histCard" data-id="${hi}">← 스코어카드로</button>` : live ? '<button data-act="card">📋 스코어카드</button>' : ''}<button data-act="close">닫기</button></div>`);
+  upgradeHoleImgs(box, rd, c);
+}
+function flowAll(t) {   // 스코어카드 버튼(data-id=지난 라운드 번호) 또는 흐름도 안의 「전체 홀 보기」
+  const id = t.dataset.id;
+  if (id !== undefined && id !== '' && store.history[+id]) { const h = store.history[+id]; flowSheet(h, h.courseSnapshot, +id); return; }
+  if (id === undefined && flowCtx) { flowSheet(flowCtx.rd, flowCtx.c, flowCtx.hi); return; }
+  if (round() && course()) flowSheet(round(), course(), null);
+}
+// 홀 완료 카드: 다음 홀로 넘어갈 때 방금 끝낸 홀의 흐름도를 지도 아래쪽에 잠깐 (누르면 크게, 7초 뒤 자동으로 닫힘)
+let flowCardTimer = null;
+function showFlowCard(i) {
+  const rd = round(), c = course(); if (!rd || !c) return;
+  const rec = rd.holes[i], hd = c.holes[i];
+  if (!rec || !(rec.strokes || rec.shots.length >= 2)) return;
+  let el = document.getElementById('flowCard');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'flowCard';
+    el.addEventListener('click', () => { el.style.display = 'none'; flowSheet(round(), course(), null, +el.dataset.i); });
+    document.querySelector('.mapwrap').appendChild(el);
+  }
+  el.dataset.i = i;
+  el.innerHTML = `<div style="margin-bottom:4px">✅ ${flowTitle(rec, hd, i)} <span class="muted">· 누르면 크게</span></div>${(sv => sv ? `<div class="himg" data-i="${i}">${sv}</div>` : '<span class="muted">샷 위치 기록 없음</span>')(shotFlowSvg(rec, hd))}`;
+  el.style.display = 'block';
+  upgradeHoleImgs(el, rd, c);
+  clearTimeout(flowCardTimer); flowCardTimer = setTimeout(() => { el.style.display = 'none'; }, 7000);
+}
+// ---------- 홀 위성 사진 — 그 홀의 실제 위성지도를 티(왼쪽)→그린(오른쪽)으로 돌려 놓고 샷 궤적·거리·그린·홀컵·스코어를 그린 한 장 ----------
+// 먼저 흐름도(SVG)를 보여 주고, 위성 타일을 받으면 사진으로 바꿈(오프라인·실패 시 흐름도 그대로)
+const IMG_W = 720, IMG_H = 400;   // 화면에는 절반 크기로(선명하게)
+const tileUrl = (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+function mercPx(p, z) {
+  const s = 256 * 2 ** z, la = p[0] * Math.PI / 180;
+  return [(p[1] + 180) / 360 * s, (1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * s];
+}
+// pts[0]=티, pts[마지막]=목표(핀 또는 마지막 공) → 이 방향이 화면 오른쪽이 되도록 회전, 전체가 들어오게 확대
+function holeImageLayout(pts, W, H, margin) {
+  const a = mercPx(pts[0], 0), b = mercPx(pts[pts.length - 1], 0);
+  const th = Math.atan2(b[1] - a[1], b[0] - a[0]), co = Math.cos(th), si = Math.sin(th);
+  const rot = ([x, y]) => [x * co + y * si, -x * si + y * co];   // -th 회전
+  const r = pts.map(p => rot(mercPx(p, 0)));
+  const xs = r.map(q => q[0]), ys = r.map(q => q[1]);
+  const ex = Math.max(...xs) - Math.min(...xs) || 1e-9, ey = Math.max(...ys) - Math.min(...ys) || 1e-9;
+  const zf = Math.min(Math.log2((W - 2 * margin) / ex), Math.log2((H - 2 * margin) / ey), 20);
+  const zt = Math.max(1, Math.min(19, Math.floor(zf))), s = 2 ** (zf - zt), k = 2 ** zt;
+  const rcx = (Math.max(...xs) + Math.min(...xs)) / 2, rcy = (Math.max(...ys) + Math.min(...ys)) / 2;
+  const cx = (rcx * co - rcy * si) * k, cy = (rcx * si + rcy * co) * k;   // 회전 공간 중심 → 원래 좌표(zt)
+  const toScreen = p => { const q = mercPx(p, zt), dx = (q[0] - cx) * s, dy = (q[1] - cy) * s; return [W / 2 + dx * co + dy * si, H / 2 - dx * si + dy * co]; };
+  const toWorld = (X, Y) => { const dx = X - W / 2, dy = Y - H / 2; return [cx + (dx * co - dy * si) / s, cy + (dx * si + dy * co) / s]; };
+  const mpp = 156543.03392 * Math.cos(pts[0][0] * Math.PI / 180) / 2 ** zf;   // 화면 1px = 몇 m
+  return { th, zt, s, cx, cy, toScreen, toWorld, mpp };
+}
+function loadTile(url) {
+  return new Promise(res => {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    const t = setTimeout(() => res(null), 7000);
+    img.onload = () => { clearTimeout(t); res(img); }; img.onerror = () => { clearTimeout(t); res(null); };
+    img.src = url;
+  });
+}
+const holeImgCache = new Map();
+async function holeImageURL(rec, hd, meta) {   // meta: { i, course, date } → dataURL(jpeg) 또는 null
+  if (/jsdom/i.test(navigator.userAgent) || !rec || rec.shots.length < 2) return null;
+  const key = JSON.stringify([meta.i, meta.date, rec.shots.map(s => s.p), rec.putts, rec.strokes, rec.pin, hd.green, hd.par, store.unit]);
+  if (holeImgCache.has(key)) return holeImgCache.get(key);
+  const W = IMG_W, H = IMG_H, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d'); if (!ctx) return null;
+  const g = hd.green && hd.green.c ? hd.green : null, pin = g ? pinOf(g, rec.pin == null ? 50 : rec.pin) : null;
+  const shots = rec.shots.map(s => s.p), n = shots.length - 1;
+  const L = holeImageLayout([...shots, ...(pin ? [pin] : [])], W, H, 78);
+  // 1) 위성 타일 (회전·확대해서 깔기)
+  ctx.fillStyle = '#16301f'; ctx.fillRect(0, 0, W, H);
+  const cs = [[0, 0], [W, 0], [0, H], [W, H]].map(([x, y]) => L.toWorld(x, y));
+  const tx0 = Math.floor(Math.min(...cs.map(c => c[0])) / 256), tx1 = Math.floor(Math.max(...cs.map(c => c[0])) / 256);
+  const ty0 = Math.floor(Math.min(...cs.map(c => c[1])) / 256), ty1 = Math.floor(Math.max(...cs.map(c => c[1])) / 256);
+  const jobs = [];
+  for (let x = tx0; x <= tx1; x++) for (let y = ty0; y <= ty1; y++) jobs.push(loadTile(tileUrl(L.zt, x, y)).then(img => ({ img, x, y })));
+  const tiles = await Promise.all(jobs);
+  if (!tiles.some(t => t.img)) return null;   // 오프라인 → 흐름도 유지
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(-L.th); ctx.scale(L.s, L.s); ctx.translate(-L.cx, -L.cy);
+  tiles.forEach(t => { if (t.img) ctx.drawImage(t.img, t.x * 256, t.y * 256, 256.6, 256.6); });
+  ctx.restore();
+  // 2) 겹쳐 그리기
+  const P = shots.map(L.toScreen), F = '-apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+  const tag = (x, y, text, bg, fg = '#fff', size = 20) => {
+    ctx.font = `700 ${size}px ${F}`; const w = ctx.measureText(text).width + 14, h = size + 10;
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, 7); ctx.fill();
+    ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 1);
+  };
+  if (g) {   // 그린
+    const c = L.toScreen(g.c), r = Math.max(14, greenRadius(g) / L.mpp);
+    ctx.fillStyle = 'rgba(126,224,138,.22)'; ctx.strokeStyle = 'rgba(200,255,210,.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(c[0], c[1], r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  const line = (a, b, dash) => {
+    ctx.save(); ctx.setLineDash(dash ? [10, 8] : []); ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
+    ctx.strokeStyle = dash ? '#ffe9a8' : '#ffffff'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
+    ctx.restore();
+    const an = Math.atan2(b[1] - a[1], b[0] - a[0]), tip = [b[0] - Math.cos(an) * 13, b[1] - Math.sin(an) * 13];
+    ctx.fillStyle = dash ? '#ffe9a8' : '#ffffff'; ctx.beginPath(); ctx.moveTo(...tip);
+    ctx.lineTo(tip[0] - Math.cos(an - .45) * 16, tip[1] - Math.sin(an - .45) * 16); ctx.lineTo(tip[0] - Math.cos(an + .45) * 16, tip[1] - Math.sin(an + .45) * 16); ctx.fill();
+  };
+  for (let k = 1; k <= n; k++) line(P[k - 1], P[k]);
+  const last = shots[n], onGreen = !!(g && haversine(last, g.c) <= greenRadius(g)), left = pin ? haversine(last, pin) : null;
+  if (pin && !onGreen) line(P[n], L.toScreen(pin), true);
+  if (pin) {   // 깃발(홀컵)
+    const q = L.toScreen(pin);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(q[0], q[1]); ctx.lineTo(q[0], q[1] - 34); ctx.stroke();
+    ctx.fillStyle = '#ffd76a'; ctx.beginPath(); ctx.moveTo(q[0], q[1] - 34); ctx.lineTo(q[0] + 24, q[1] - 27); ctx.lineTo(q[0], q[1] - 20); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(q[0], q[1], 5, 0, Math.PI * 2); ctx.fill();
+  }
+  P.forEach((p, k) => {   // 샷 지점
+    ctx.fillStyle = k === 0 ? '#ffffff' : '#ff7a45'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p[0], p[1], k === 0 ? 8 : 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  });
+  for (let k = 1; k <= n; k++) {   // 거리 글자 (선 가운데, 위쪽으로 살짝)
+    const a = P[k - 1], b = P[k], d = haversine(shots[k - 1], shots[k]);
+    tag((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 18, `${fmt(d)}${unitLbl()}`, 'rgba(0,0,0,.72)', '#fff', 21);
+  }
+  P.forEach((p, k) => tag(p[0], p[1] + 24, k === 0 ? '티' : `${k}샷`, k === 0 ? '#2f7d45' : 'rgba(31,90,51,.95)', '#fff', 17));
+  if (pin) {
+    const q = L.toScreen(pin), txt = [rec.putts ? `퍼트 ${rec.putts}` : '', left != null ? (onGreen ? `핀 ${fmt(left)}${unitLbl()}` : `남은 ${fmt(left)}${unitLbl()}`) : ''].filter(Boolean).join(' · ');
+    tag(q[0], q[1] - 52, '홀컵', '#ffd76a', '#3a2a00', 17);
+    if (txt) tag(q[0], q[1] + 24, txt, 'rgba(0,0,0,.75)', '#ffe9a8', 17);
+  }
+  // 3) 위 제목줄·아래 출처
+  const par = hd.par, st = rec.strokes;
+  ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(0, 0, W, 44);
+  ctx.font = `700 22px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+  ctx.fillText(`${meta.i + 1}번홀 · Par ${par}${st ? ` · ${st}타 ${scoreName(st, par)}` : ''}${rec.putts ? ` · ${rec.putts}퍼트` : ''}`, 14, 23);
+  ctx.font = `500 15px ${F}`; ctx.textAlign = 'right'; ctx.fillStyle = '#cfe';
+  ctx.fillText(`${meta.course || ''} · ${new Date(meta.date).toLocaleDateString('ko-KR')}`, W - 12, 23);
+  ctx.font = `12px ${F}`; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText('위성사진 Esri World Imagery', W - 8, H - 10);
+  let url = null;
+  try { url = cv.toDataURL('image/jpeg', 0.86); } catch (e) { url = null; }   // 타일 출처가 막히면(CORS) 흐름도 유지
+  if (url) { holeImgCache.set(key, url); if (holeImgCache.size > 40) holeImgCache.delete(holeImgCache.keys().next().value); }
+  return url;
+}
+// 화면 안 .himg 칸(흐름도가 먼저 들어 있음)을 위성 사진으로 하나씩 교체
+async function upgradeHoleImgs(scope, rd, c) {
+  const els = [...scope.querySelectorAll('.himg:not([data-done])')];
+  for (const el of els) {
+    el.dataset.done = '1';
+    const i = +el.dataset.i, url = await holeImageURL(rd.holes[i], c.holes[i], { i, course: c.name, date: rd.date });
+    if (url && el.isConnected) el.innerHTML = `<img src="${url}" alt="${i + 1}번홀 샷 사진" style="display:block;width:100%;border-radius:10px">`;
+  }
+}
+async function saveHoleImg(rd, c, i) {   // 사진 저장·공유 (카톡 등)
+  const url = await holeImageURL(rd.holes[i], c.holes[i], { i, course: c.name, date: rd.date });
+  if (!url) { toast('위성 사진을 만들 수 없습니다 (인터넷 연결·샷 기록 확인)', 3000); return; }
+  const name = `${c.name}_${i + 1}번홀.jpg`.replace(/[\\/:*?"<>|\s]+/g, '_');
+  try {
+    const blob = await (await fetch(url)).blob(), file = new File([blob], name, { type: 'image/jpeg' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: `${i + 1}번홀` }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  toast('사진을 저장했습니다', 2000);
 }
 function longest(shots) {
   let m = 0;

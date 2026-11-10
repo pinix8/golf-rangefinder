@@ -1,7 +1,7 @@
 'use strict';
 
 // 앱 화면은 네트워크 우선(업데이트 반영), 끊기면 캐시로 동작. 위성지도 타일은 본 것만 캐시.
-const CACHE = 'golf-rf-v30';
+const CACHE = 'golf-rf-v33';
 const SHELL = [
   './', './index.html', './osm.js?v=21', './auth.js?v=21', './ojang.js?v=30', './updown.js?v=30', './manifest.json', './icon.svg',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png',
@@ -24,9 +24,8 @@ self.addEventListener('fetch', e => {
   if (req.url.includes('.supabase.co')) return;   // 로그인·골프장 데이터 API는 캐시하지 않음(앱이 직접 휴대폰에 캐시)
   const isTile = req.url.includes('arcgisonline.com');
   if (isTile) {
-    e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(req, copy));
+    e.respondWith(caches.match(req).then(hit => (hit && !(hit.type === 'opaque' && req.mode === 'cors')) ? hit : fetch(req).then(res => {
+      if (res.ok || res.type === 'opaque') { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
     })));
     return;
