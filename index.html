@@ -172,7 +172,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v24';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v25';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -1182,10 +1182,10 @@ function roundIsStale() {
   return Date.now() - last > IDLE_MS || new Date(last).toDateString() !== new Date().toDateString();
 }
 function archiveStaleRound() {
-  const rd = round(), played = roundPlayed(rd);
-  if (played && course()) store.history.unshift({ ...rd, courseSnapshot: JSON.parse(JSON.stringify(course())) });
+  const rd = round(), played = roundPlayed(rd) && !!course(), name = course() ? course().name : '';
+  if (played) store.history.unshift({ ...rd, courseSnapshot: JSON.parse(JSON.stringify(course())) });
   store.round = null; save(); layers.clearLayers();
-  if (played) toast('지난 라운드를 「지난 라운드」에 저장했습니다', 2500);
+  if (played) toast(`지난 라운드(${name} · ${rd.holes.filter(h => h.strokes || h.putts || h.shots.length).length}홀 기록)는 ☰ → 「지난 라운드」에 저장했습니다`, 4000);
 }
 function startRound(id) {
   if (roundIsStale()) archiveStaleRound();
@@ -1344,7 +1344,19 @@ document.addEventListener('visibilitychange', keepAwake);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 startGps(); keepAwake(); render(); fitHole();
-if (!round() || roundIsStale()) setTimeout(() => { if ((!round() || roundIsStale()) && !sheet.classList.contains('show')) openHome(); }, 400);
+// 앱을 열거나(새로 실행) 백그라운드에서 다시 돌아왔을 때: 쉬고 있는 라운드(3시간 기록 없음·날짜 바뀜)는
+// 뒤에 남겨 두지 않고 정리 — 기록 있으면 「지난 라운드」에 저장, 시작만 하고 1시간 지난 빈 라운드는 버림 → 깨끗한 첫 화면
+function tidyStaleRound(onOpen) {
+  const rd = round();
+  if (rd && roundIsStale() && (roundPlayed(rd) || Date.now() - Date.parse(rd.date) > 3600000)) {
+    if (sheet.classList.contains('show')) closeSheet();
+    archiveStaleRound(); render();
+  }
+  if (!round() || roundIsStale()) { if (!sheet.classList.contains('show')) openHome(); }
+  else if (onOpen) toast(`▶ 진행 중 라운드 이어서 — ${course().name} ${holeIdx() + 1}번홀 · 끝내려면 ☰ → 라운드 종료`, 4000);
+}
+setTimeout(() => tidyStaleRound(true), 400);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tidyStaleRound(false); });
 </script>
 <script src="ojang.js?v=21"></script>
 <script src="updown.js?v=21"></script>
