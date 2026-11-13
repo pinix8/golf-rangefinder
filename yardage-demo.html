@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>홀 거리 그림 시험판</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#0f1712;--fg:#f2f5f0;--mut:#9fb3a6;--acc:#5bd17d}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Malgun Gothic",sans-serif}
+#top{position:fixed;left:0;right:0;top:0;z-index:1000;background:rgba(15,23,18,.92);padding:6px 8px}
+#top select,#top button{font:inherit;background:#22302a;color:var(--fg);border:1px solid #3a4a41;border-radius:8px;padding:5px 8px}
+#holes{display:flex;gap:4px;margin-top:6px;overflow-x:auto}#holes button{min-width:36px}
+#holes button.on,.mode button.on{background:var(--acc);color:#062;border-color:var(--acc)}
+#map{position:fixed;left:0;right:0;top:84px;bottom:0}
+#info{position:fixed;left:8px;right:8px;bottom:8px;z-index:1000;background:rgba(15,23,18,.92);border-radius:12px;padding:8px 10px}
+.mode{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.mode button{font:inherit;background:#22302a;color:var(--fg);border:1px solid #3a4a41;border-radius:8px;padding:6px 9px}
+.mut{color:var(--mut);font-size:13px}.big{font-size:20px;font-weight:700}
+.tl{background:rgba(0,0,0,.7);color:#fff;border:0;border-radius:6px;padding:1px 5px;font-size:12px;font-weight:700;box-shadow:none;white-space:nowrap}
+.arc{background:none;border:0;color:#ffe680;font-size:11px;font-weight:700;text-shadow:0 0 3px #000;box-shadow:none}
+.gps{background:rgba(30,110,255,.9);color:#fff;border:0;border-radius:6px;font-weight:700;padding:2px 6px;box-shadow:none}
+.tl:before,.arc:before,.gps:before{display:none}
+</style></head><body>
+<div id="top">
+  <select id="nine"></select> <span id="holeTitle" class="big"></span>
+  <div id="holes"></div>
+</div>
+<div id="map"></div>
+<div id="info">
+  <div id="sum"></div>
+  <div class="mode">
+    <button data-m="green">⛳ 그린 찍기</button><button data-m="bend">↪ 꺾임점(선택)</button><button data-m="tee">● 백티 찍기</button>
+    <button id="here">📍 지금 위치로</button><button id="clr">지우기</button>
+  </div>
+  <div class="mut" id="help"></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// 시험판: 레이크우드CC — 위성사진 위에 그린·(꺾임점)·백티를 찍으면
+// 티 색깔별 위치(그린에서 카드 거리만큼 경로를 따라감)·그린 기준 원호·내 위치→그린 거리를 그림
+const COURSE = {"name":"레이크우드CC","nines":[{"label":"물길","pars":[4,4,3,5,4,3,5,4,4],"tees":{"레드":[288,283,122,447,300,118,431,308,284],"골드":[302,299,147,486,357,135,455,354,334],"실버":[null,null,null,503,null,null,null,null,365],"화이트":[311,313,165,523,380,158,476,368,379],"블루":[332,325,185,537,392,175,495,384,400]}},{"label":"꽃길","pars":[4,4,3,4,4,5,3,5,4],"tees":{"레드":[318,289,90,317,317,428,137,437,290],"골드":[335,306,105,340,359,447,159,488,306],"실버":[null,null,119,null,null,467,174,507,null],"화이트":[350,323,128,351,378,490,188,520,319],"블루":[365,343,145,363,393,506,201,533,332]}},{"label":"산길","pars":[5,3,4,4,3,4,5,4,4],"tees":{"레드":[430,80,259,277,121,233,360,276,281],"골드":[480,94,315,305,144,294,442,333,319],"화이트":[510,117,329,332,166,315,472,367,345],"블루":[524,133,350,358,182,334,485,385,364]}},{"label":"숲길","pars":[4,5,3,4,4,5,4,3,4],"tees":{"레드":[268,342,95,273,273,394,216,104,307],"골드":[291,393,115,321,304,431,271,133,336],"실버":[null,455,null,378,385,468,327,null,354],"화이트":[377,482,141,400,404,494,351,155,381],"블루":[390,501,160,420,424,513,370,175,402]}}]};
+const CENTER = [37.7806, 127.0880];
+const TEE_DOT = { 블랙: '#222', 골드: '#c9a227', 블루: '#2f6fe0', 화이트: '#ffffff', 실버: '#b8bec6', 옐로: '#f2c500', 그린: '#3cb45a', 레드: '#e0342f' };
+const KEY = 'yd-demo-v1';
+let store = {};
+try { store = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { store = {}; }
+const saveStore = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* 저장 불가 환경 */ } };
+let nineI = 0, hole = 0, mode = 'green', me = null;
+const $ = id => document.getElementById(id);
+
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView(CENTER, 16);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19 }).addTo(map);
+const layer = L.layerGroup().addTo(map);
+
+const R = 6371008.8, rad = Math.PI / 180;
+function dist(a, b) {
+  const dLa = (b[0] - a[0]) * rad, dLo = (b[1] - a[1]) * rad;
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+function pathLen(p) { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; }
+function pointFromGreen(p, d) {   // p = [그린, (꺾임점), 백티] — 그린에서 경로를 따라 d m 지점 (경로보다 길면 마지막 구간 연장)
+  let left = d;
+  for (let i = 1; i < p.length; i++) {
+    const seg = dist(p[i - 1], p[i]);
+    if (left <= seg || i === p.length - 1) return lerp(p[i - 1], p[i], left / seg);
+    left -= seg;
+  }
+  return p[0];
+}
+function circle(c, r) {
+  const pts = [];
+  for (let a = 0; a <= 360; a += 6) { const t = a * rad; pts.push([c[0] + (r * Math.cos(t)) / 111320, c[1] + (r * Math.sin(t)) / (111320 * Math.cos(c[0] * rad))]); }
+  return pts;
+}
+const hk = () => COURSE.nines[nineI].label + '|' + hole;
+const hd = () => store[hk()] || (store[hk()] = {});
+const dot = t => `<i style="display:inline-block;width:.75em;height:.75em;border-radius:50%;border:1px solid #888;background:${TEE_DOT[t] || '#aaa'}"></i>`;
+
+function render() {
+  const n = COURSE.nines[nineI], h = hd();
+  $('holeTitle').textContent = ` ${hole + 1}번홀 · Par ${n.pars[hole]}`;
+  document.querySelectorAll('#holes button').forEach((b, i) => b.classList.toggle('on', i === hole));
+  document.querySelectorAll('.mode [data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
+  layer.clearLayers();
+  const tees = Object.entries(n.tees).filter(([, a]) => a[hole] != null).sort((a, b) => b[1][hole] - a[1][hole]);
+  let html = tees.map(([t, a]) => `<span style="white-space:nowrap">${dot(t)} ${t} <b>${a[hole]}m</b></span>`).join(' · ');
+  if (h.green) {
+    L.marker(h.green, { icon: L.divIcon({ html: '⛳', className: '', iconSize: [24, 24], iconAnchor: [6, 22] }) }).addTo(layer);
+    for (const r of [50, 100, 150, 200, 250]) L.polyline(circle(h.green, r), { color: '#ffe680', weight: 1, opacity: 0.7, dashArray: '4 6' }).addTo(layer);
+  }
+  if (h.green && h.tee) {
+    const p = h.bend ? [h.green, h.bend, h.tee] : [h.green, h.tee];
+    const len = pathLen(p);
+    L.polyline(p, { color: '#ffffff', weight: 2, opacity: 0.85 }).addTo(layer);
+    for (const r of [50, 100, 150, 200, 250]) if (r < len) {
+      L.tooltip({ permanent: true, direction: 'right', className: 'arc', offset: [4, 0] }).setLatLng(pointFromGreen(p, r)).setContent(String(r)).addTo(layer);
+    }
+    tees.forEach(([t, a], i) => {
+      L.circleMarker(pointFromGreen(p, a[hole]), { radius: 7, color: '#000', weight: 1.5, fillColor: TEE_DOT[t] || '#aaa', fillOpacity: 1 }).addTo(layer)
+        .bindTooltip(`${t} ${a[hole]}m`, { permanent: true, direction: i % 2 ? 'left' : 'right', className: 'tl', offset: [i % 2 ? -8 : 8, (Math.floor(i / 2) - (tees.length - 1) / 4) * 18] });
+    });
+    const back = tees[0];
+    html += `<div class="mut">지도 경로 길이 ${Math.round(len)}m (그린→찍은 백티) · 카드 ${back ? back[0] + ' ' + back[1][hole] + 'm' : ''}</div>`;
+  }
+  if (me) {
+    L.circleMarker(me, { radius: 8, color: '#fff', weight: 2, fillColor: '#1e6eff', fillOpacity: 1 }).addTo(layer);
+    if (h.green) {
+      L.polyline([me, h.green], { color: '#4aa3ff', weight: 2, dashArray: '6 6' }).addTo(layer);
+      L.tooltip({ permanent: true, direction: 'top', className: 'gps', offset: [0, -8] }).setLatLng(me).setContent('그린까지 ' + Math.round(dist(me, h.green)) + 'm').addTo(layer);
+    }
+  }
+  $('sum').innerHTML = html;
+  $('help').textContent = !h.green ? '① 위성사진에서 그린 가운데를 탭하세요 (그린에 서 있다면 「지금 위치로」)'
+    : !h.tee ? '② 가장 뒤 티박스를 탭하세요 — 도그렉이면 먼저 「꺾임점」을 고르고 휘는 지점을 탭'
+    : '다시 찍으려면 버튼을 고르고 탭. 찍은 위치는 이 휴대폰에만 저장됩니다';
+}
+function fit() {
+  const h = hd(), pts = [h.green, h.bend, h.tee].filter(Boolean);
+  if (pts.length >= 2) map.fitBounds(pts, { padding: [40, 130] });
+  else if (pts.length) map.setView(pts[0], 18);
+  else map.setView(CENTER, 16);
+}
+function setPoint(p) {
+  const h = hd(); h[mode] = p; saveStore();
+  if (mode !== 'tee') mode = h.tee && mode === 'green' ? 'green' : 'tee';
+  render();
+}
+map.on('click', e => setPoint([e.latlng.lat, e.latlng.lng]));
+document.querySelectorAll('.mode [data-m]').forEach(b => { b.onclick = () => { mode = b.dataset.m; render(); }; });
+$('here').onclick = () => { if (me) { setPoint(me.slice()); map.setView(me, 18); } else alert('아직 GPS 위치를 받지 못했습니다'); };
+$('clr').onclick = () => { if (confirm('이 홀에 찍은 위치를 지울까요?')) { store[hk()] = {}; saveStore(); mode = 'green'; render(); } };
+COURSE.nines.forEach((n, i) => $('nine').add(new Option(n.label + ' 코스', i)));
+const pickHole = i => { hole = i; mode = hd().green ? 'tee' : 'green'; render(); fit(); };
+$('nine').onchange = e => { nineI = +e.target.value; pickHole(0); };
+for (let i = 0; i < 9; i++) { const b = document.createElement('button'); b.textContent = i + 1; b.onclick = () => pickHole(i); $('holes').appendChild(b); }
+if (navigator.geolocation) navigator.geolocation.watchPosition(pos => { me = [pos.coords.latitude, pos.coords.longitude]; render(); }, () => {}, { enableHighAccuracy: true, maximumAge: 2000 });
+render(); fit();
+</script>
+</body></html>
