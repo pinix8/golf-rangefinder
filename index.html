@@ -198,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v48';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v49';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -1341,7 +1341,9 @@ const teeDot = t => `<i style="display:inline-block;width:.7em;height:.7em;borde
 function teeNames(nines) {
   if (!nines.length || nines.some(n => !n || !n.tees)) return [];
   const names = Object.keys(nines[0].tees).filter(t => nines.every(n => n.tees[t]));
-  const tot = t => nines.reduce((s, n) => s + n.tees[t].reduce((x, v) => x + (v || 0), 0), 0);
+  // 길이 점수 = 홀마다 「그 홀 가장 긴 티 대비 비율」의 평균 — 일부 홀에 없는 티(null)가 있어도 합계처럼 작아지지 않게
+  const holeMax = nines.map(n => Array.from({ length: 9 }, (_, i) => Math.max(0, ...names.map(t => n.tees[t][i] || 0))));
+  const tot = t => { let s = 0, c = 0; nines.forEach((n, k) => n.tees[t].forEach((v, i) => { if (v != null && holeMax[k][i]) { s += v / holeMax[k][i]; c++; } })); return c ? s / c : 0; };
   const base = {};
   names.forEach(t => { const b = teeBase(t); (base[b] = base[b] || []).push(tot(t)); });
   const len = t => { const v = base[teeBase(t)]; return v.reduce((x, y) => x + y, 0) / v.length; };
