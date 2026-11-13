@@ -198,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v39';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v40';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -376,7 +376,8 @@ function render() {
   try { renderHole($, c, h, r); } catch (e) { reportError(e); }
 }
 function renderHole($, c, h, r) {
-  $('holeTitle').innerHTML = `<b>${holeIdx() + 1}번홀 · Par ${h.par} <span style="font-size:13px;opacity:.6">✎</span></b><small>${esc(c.name)}${canSwapNines(c) && !c.name.includes('→') ? ` · ${esc(c.nines[0])} 출발` : ''}</small>`;
+  const card = holeCardLen(c, holeIdx());
+  $('holeTitle').innerHTML = `<b>${holeIdx() + 1}번홀 · Par ${h.par}${card ? ` · <span class="cardLen">${teeDot(card.tee)}${fmt(card.m)}${unitLbl()}</span>` : ''} <span style="font-size:13px;opacity:.6">✎</span></b><small>${esc(c.name)}${canSwapNines(c) && !c.name.includes('→') ? ` · ${esc(c.nines[0])} 출발` : ''}</small>`;
   const g = h.green || {};
   const pin = pinPoint();
   $('dF').textContent = me && g.f ? fmt(haversine(me, g.f)) : '—';
@@ -396,7 +397,8 @@ function renderHole($, c, h, r) {
   const shots = r.shots;
   // 홀 전장: 기록한 티샷 지점(없으면 등록된 티, 그것도 없으면 현재 위치) → 핀
   const teeP = shots.length ? shots[0].p : h.tee;
-  $('dHole').textContent = pin && teeP ? fmt(haversine(teeP, pin)) + unitLbl() : pin && me ? '티에서 「티샷 위치」' : '—';
+  $('dHole').textContent = pin && teeP ? fmt(haversine(teeP, pin)) + unitLbl()
+    : card ? `${fmt(card.m)}${unitLbl()} (${card.tee}티 카드)` : pin && me ? '티에서 「티샷 위치」' : '—';
   $('dLast').textContent = me && shots.length ? fmt(haversine(shots[shots.length - 1].p, me)) + unitLbl() : '—';
   const n = shots.length - 1;
   if (n >= 1) {
@@ -917,6 +919,7 @@ box.addEventListener('click', e => {
   else if (a === 'home') { pendingGame = null; openHome(); }
   else if (a === 'menu') openMenu();
   else if (a === 'quickPick') quickPick(+id);
+  else if (a === 'teePick') { store.tee = id; save(); render(); if (t.dataset.from === 'pick') pickSheet(); else holeSheet(); }
   else if (a === 'quickGo') quickStart(pick.i, +t.dataset.f, +t.dataset.b);
   else if (a === 'nineF' || a === 'nineB') pickNine(a === 'nineF' ? 'f' : 'b', +t.dataset.k);
   else if (a === 'nineSwap') { [pick.f, pick.b] = [pick.b, pick.f]; pickSheet(); }
@@ -1231,6 +1234,7 @@ function holeSheet() {
     ${adm ? `<p><b>파</b></p>
     <div class="row">${[3, 4, 5, 6].map(p => `<button data-act="holePar" data-id="${p}" class="${p === h.par ? 'on' : ''}">Par ${p}</button>`).join('')}</div>`
       : `<p><b>Par ${h.par}</b> <span class="muted">· 파 정보가 틀리면 관리자에게 알려 주세요</span></p>`}
+    ${teeRow(courseTees(c), 'hole')}
     <div class="list">
       ${canSwapNines(c) ? `<button data-act="nineChange">🔄 출발 코스 바꾸기 <span class="muted">· 지금 ${esc(c.nines.join(' → '))}</span></button>` : ''}
       <button data-act="setup">📍 그린·티 위치 다시 지정 (지도 탭)</button>
@@ -1324,6 +1328,31 @@ const nineName = l => /코스$/.test(l) ? l : l + ' 코스';
 const nineSum = (c, n) => dbPars(c, n).reduce((s, v) => s + v, 0);
 const dbIndexOf = cc => cc && cc.src && cc.src.startsWith('db:') ? PAR_DB.findIndex(x => x.name === cc.src.slice(3)) : -1;
 const canSwapNines = cc => { const k = dbIndexOf(cc); return k >= 0 && PAR_DB[k].nines.length > 1 && !!cc.nines; };
+// ---------- 티별 홀 거리 (스코어카드 값) — 내장 DB nine.tees = {"화이트": [9홀 m], ...}. 고른 티는 store.tee(라운드 넘어 기억) ----------
+const TEE_ORDER = ['블랙', '블루', '화이트', '옐로', '레드'];
+const TEE_DOT = { 블랙: '#222', 블루: '#2f6fe0', 화이트: '#fff', 옐로: '#f2c500', 레드: '#e0342f' };
+const teeRank = t => { const i = TEE_ORDER.indexOf(t); return i < 0 ? 99 : i; };
+const teeDot = t => `<i style="display:inline-block;width:.7em;height:.7em;border-radius:50%;border:1px solid #888;vertical-align:baseline;margin-right:3px;background:${TEE_DOT[t] || '#aaa'}"></i>`;
+function teeNames(nines) {   // 모든 nine에 같은 이름으로 있는 티만
+  if (!nines.length || nines.some(n => !n || !n.tees)) return [];
+  return Object.keys(nines[0].tees).filter(t => nines.every(n => n.tees[t])).sort((a, b) => teeRank(a) - teeRank(b));
+}
+function courseTees(cc) {
+  const k = dbIndexOf(cc); if (k < 0 || !cc.nines) return [];
+  return teeNames(cc.nines.map(l => PAR_DB[k].nines.find(n => n.label === l)));
+}
+const pickTee = ts => ts.includes(store.tee) ? store.tee : ts.includes('화이트') ? '화이트' : ts[0];
+function holeCardLen(cc, i) {   // {tee, m} 또는 null
+  const ts = courseTees(cc); if (!ts.length) return null;
+  const tee = pickTee(ts), n = PAR_DB[dbIndexOf(cc)].nines.find(x => x.label === cc.nines[i < 9 ? 0 : 1]);
+  return { tee, m: n.tees[tee][i % 9] };
+}
+function teeRow(ts, from) {
+  if (!ts.length) return '';
+  const cur = pickTee(ts);
+  return `<p style="margin:10px 0 0"><b>티</b> <span class="muted">(홀 거리 = 스코어카드 값)</span></p>
+    <div class="row">${ts.map(t => `<button data-act="teePick" data-id="${esc(t)}" data-from="${from}" class="${t === cur ? 'on' : ''}">${teeDot(t)}${esc(t)}</button>`).join('')}</div>`;
+}
 function quickPick(i, mode) {
   const c = PAR_DB[i]; if (!c) return;
   if (c.nines.length === 1) { quickStart(i, 0, 0); return; }   // 9홀 골프장: 같은 9홀 두 번
@@ -1362,6 +1391,7 @@ function pickSheet() {
     ? '<p class="muted">이미 친 홀의 타수·샷은 순서(1번홀, 2번홀…) 그대로 두고 파·그린 위치만 새 순서로 바뀝니다.</p>' : '';
   openSheet(`<h3>${title}</h3>${pick.mode === 'change' ? `<p class="muted" style="margin:0">${esc(c.name)} · 지금: ${esc(course().nines.join(' → '))}</p>` : ''}
     ${body}${note}
+    ${teeRow(teeNames(pick.mode === 'change' ? N : [N[pick.f], N[pick.b]]), 'pick')}
     ${c.verified ? '' : '<p style="color:var(--warn)">⚠️ 파 확인 필요 — 현장 스코어카드와 비교하세요.</p>'}
     <div class="list">${pick.mode === 'change' ? '<button data-act="close">닫기</button>' : '<button data-act="start">← 다시 검색</button>'}</div>`);
 }
