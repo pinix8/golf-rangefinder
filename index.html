@@ -198,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v43';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v44';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -1345,10 +1345,11 @@ function courseTees(cc) {
   return teeNames(cc.nines.map(l => PAR_DB[k].nines.find(n => n.label === l)));
 }
 const pickTee = ts => ts.includes(store.tee) ? store.tee : ts.includes('화이트') ? '화이트' : ts[0];
-function holeCardLen(cc, i) {   // {tee, m} 또는 null
+function holeCardLen(cc, i) {   // {tee, m} 또는 null — 그 홀에 해당 티가 없으면(null) 거리 표시 안 함
   const ts = courseTees(cc); if (!ts.length) return null;
   const tee = pickTee(ts), n = PAR_DB[dbIndexOf(cc)].nines.find(x => x.label === cc.nines[i < 9 ? 0 : 1]);
-  return { tee, m: n.tees[tee][i % 9] };
+  const m = n.tees[tee][i % 9];
+  return m == null ? null : { tee, m };
 }
 function teeRow(ts, from) {
   if (!ts.length) return '';
