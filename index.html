@@ -198,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v45';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v46';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -1331,14 +1331,21 @@ const canSwapNines = cc => { const k = dbIndexOf(cc); return k >= 0 && PAR_DB[k]
 // ---------- 티별 홀 거리 (스코어카드 값) — 내장 DB nine.tees = {"화이트": [9홀 m], ...}. 고른 티는 store.tee(라운드 넘어 기억) ----------
 // 색 이름이 아닌 티(공식 표기 그대로: 챔피언십·프론트·레이디 등)는 순서만 정하고 점은 회색
 const TEE_ORDER = ['블랙', '챔피언십', '골드', '블루', '화이트', '실버', '프론트', '옐로', '레이디', '레드'];
-const TEE_DOT = { 블랙: '#222', 골드: '#c9a227', 블루: '#2f6fe0', 화이트: '#fff', 실버: '#b8bec6', 옐로: '#f2c500', 레드: '#e0342f' };
+const TEE_DOT = { 블랙: '#222', 골드: '#c9a227', 블루: '#2f6fe0', 화이트: '#fff', 실버: '#b8bec6', 옐로: '#f2c500', 그린: '#3cb45a', 레드: '#e0342f' };
 // 2그린 골프장은 「블루 좌」「블루 우」처럼 그린별 티 — 색·순서는 앞 단어(블루)로, 같은 색이면 좌→우
 const teeBase = t => String(t).split(' ')[0];
 const teeRank = t => { const i = TEE_ORDER.indexOf(teeBase(t)); return (i < 0 ? 99 : i) * 10 + (/ 우$/.test(t) ? 1 : 0); };
 const teeDot = t => `<i style="display:inline-block;width:.7em;height:.7em;border-radius:50%;border:1px solid #888;vertical-align:baseline;margin-right:3px;background:${TEE_DOT[teeBase(t)] || '#aaa'}"></i>`;
-function teeNames(nines) {   // 모든 nine에 같은 이름으로 있는 티만
+// 모든 nine에 같은 이름으로 있는 티만. 순서 = 그 골프장 실제 거리(긴 티 먼저) — 골프장마다 색 순서가 달라서
+// (예: 청평마이다스 블루>옐로>화이트). 「블루 좌/우」는 같은 색끼리 평균으로 묶고 좌→우. 같으면 TEE_ORDER
+function teeNames(nines) {
   if (!nines.length || nines.some(n => !n || !n.tees)) return [];
-  return Object.keys(nines[0].tees).filter(t => nines.every(n => n.tees[t])).sort((a, b) => teeRank(a) - teeRank(b));
+  const names = Object.keys(nines[0].tees).filter(t => nines.every(n => n.tees[t]));
+  const tot = t => nines.reduce((s, n) => s + n.tees[t].reduce((x, v) => x + (v || 0), 0), 0);
+  const base = {};
+  names.forEach(t => { const b = teeBase(t); (base[b] = base[b] || []).push(tot(t)); });
+  const len = t => { const v = base[teeBase(t)]; return v.reduce((x, y) => x + y, 0) / v.length; };
+  return names.sort((a, b) => (len(b) - len(a)) || (teeRank(a) - teeRank(b)));
 }
 function courseTees(cc) {
   const k = dbIndexOf(cc); if (k < 0 || !cc.nines) return [];
