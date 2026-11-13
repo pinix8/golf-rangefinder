@@ -198,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v41';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v42';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -1332,8 +1332,10 @@ const canSwapNines = cc => { const k = dbIndexOf(cc); return k >= 0 && PAR_DB[k]
 // 색 이름이 아닌 티(공식 표기 그대로: 챔피언십·프론트·레이디 등)는 순서만 정하고 점은 회색
 const TEE_ORDER = ['블랙', '챔피언십', '블루', '화이트', '프론트', '옐로', '레이디', '레드'];
 const TEE_DOT = { 블랙: '#222', 블루: '#2f6fe0', 화이트: '#fff', 옐로: '#f2c500', 레드: '#e0342f' };
-const teeRank = t => { const i = TEE_ORDER.indexOf(t); return i < 0 ? 99 : i; };
-const teeDot = t => `<i style="display:inline-block;width:.7em;height:.7em;border-radius:50%;border:1px solid #888;vertical-align:baseline;margin-right:3px;background:${TEE_DOT[t] || '#aaa'}"></i>`;
+// 2그린 골프장은 「블루 좌」「블루 우」처럼 그린별 티 — 색·순서는 앞 단어(블루)로, 같은 색이면 좌→우
+const teeBase = t => String(t).split(' ')[0];
+const teeRank = t => { const i = TEE_ORDER.indexOf(teeBase(t)); return (i < 0 ? 99 : i) * 10 + (/ 우$/.test(t) ? 1 : 0); };
+const teeDot = t => `<i style="display:inline-block;width:.7em;height:.7em;border-radius:50%;border:1px solid #888;vertical-align:baseline;margin-right:3px;background:${TEE_DOT[teeBase(t)] || '#aaa'}"></i>`;
 function teeNames(nines) {   // 모든 nine에 같은 이름으로 있는 티만
   if (!nines.length || nines.some(n => !n || !n.tees)) return [];
   return Object.keys(nines[0].tees).filter(t => nines.every(n => n.tees[t])).sort((a, b) => teeRank(a) - teeRank(b));
