@@ -198,7 +198,7 @@
 
 // ---------- 저장소 ----------
 const KEY = 'golfRangefinder.v1';
-const APP_VER = 'v44';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
+const APP_VER = 'v45';   // sw.js CACHE 버전과 함께 올림 — 메뉴 하단에 표시(휴대폰에 새 버전이 받아졌는지 확인용)
 const store = load();
 function load() {
   try {
@@ -1330,8 +1330,8 @@ const dbIndexOf = cc => cc && cc.src && cc.src.startsWith('db:') ? PAR_DB.findIn
 const canSwapNines = cc => { const k = dbIndexOf(cc); return k >= 0 && PAR_DB[k].nines.length > 1 && !!cc.nines; };
 // ---------- 티별 홀 거리 (스코어카드 값) — 내장 DB nine.tees = {"화이트": [9홀 m], ...}. 고른 티는 store.tee(라운드 넘어 기억) ----------
 // 색 이름이 아닌 티(공식 표기 그대로: 챔피언십·프론트·레이디 등)는 순서만 정하고 점은 회색
-const TEE_ORDER = ['블랙', '챔피언십', '블루', '화이트', '실버', '프론트', '옐로', '레이디', '레드'];
-const TEE_DOT = { 블랙: '#222', 블루: '#2f6fe0', 화이트: '#fff', 실버: '#b8bec6', 옐로: '#f2c500', 레드: '#e0342f' };
+const TEE_ORDER = ['블랙', '챔피언십', '골드', '블루', '화이트', '실버', '프론트', '옐로', '레이디', '레드'];
+const TEE_DOT = { 블랙: '#222', 골드: '#c9a227', 블루: '#2f6fe0', 화이트: '#fff', 실버: '#b8bec6', 옐로: '#f2c500', 레드: '#e0342f' };
 // 2그린 골프장은 「블루 좌」「블루 우」처럼 그린별 티 — 색·순서는 앞 단어(블루)로, 같은 색이면 좌→우
 const teeBase = t => String(t).split(' ')[0];
 const teeRank = t => { const i = TEE_ORDER.indexOf(teeBase(t)); return (i < 0 ? 99 : i) * 10 + (/ 우$/.test(t) ? 1 : 0); };
