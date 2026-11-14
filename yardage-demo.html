@@ -7,7 +7,7 @@
 :root{--bg:#0f1712;--fg:#f2f5f0;--mut:#9fb3a6;--acc:#5bd17d}
 *{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Malgun Gothic",sans-serif}
 #top{position:fixed;left:0;right:0;top:0;z-index:1000;background:rgba(15,23,18,.92);padding:6px 8px}
-#top select,#top button{font:inherit;background:#22302a;color:var(--fg);border:1px solid #3a4a41;border-radius:8px;padding:5px 8px}
+#top select,#top button,#top input{font:inherit;background:#22302a;color:var(--fg);border:1px solid #3a4a41;border-radius:8px;padding:5px 8px}
 #holes{display:flex;gap:4px;margin-top:6px;overflow-x:auto}#holes button{min-width:36px}
 #holes button.on,.mode button.on{background:var(--acc);color:#062;border-color:var(--acc)}
 #map{position:fixed;left:0;right:0;top:118px;bottom:0}
@@ -21,7 +21,7 @@
 .tl:before,.arc:before,.gps:before{display:none}
 </style></head><body>
 <div id="top">
-  <select id="course"></select> <select id="nine"></select>
+  <input id="q" placeholder="골프장 검색" style="width:7.5em"> <select id="course" style="max-width:11em"></select> <select id="nine"></select>
   <div><span id="holeTitle" class="big"></span> <span id="src" class="mut"></span></div>
   <div id="holes"></div>
 </div>
@@ -30,29 +30,47 @@
   <div id="sum"></div>
   <div class="mode">
     <button data-m="green">⛳ 그린 찍기</button><button data-m="bend">↪ 꺾임점(선택)</button><button data-m="tee">● 백티 찍기</button>
-    <button id="here">📍 지금 위치로</button><button id="clr">지우기</button>
+    <span id="sides" class="mode" style="margin:0"></span><button id="here">📍 지금 위치로</button><button id="clr">지우기</button>
   </div>
   <div class="mut" id="help"></div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="courses-kr.js" onerror="0"></script>
+<script src="yardage-osm.js" onerror="window.YARDAGE_OSM={}"></script>
 <script>
 // 시험판: 위성사진 위에 그린·(꺾임점)·백티 경로를 두고, 티 색깔별 위치(그린에서 카드 거리만큼 경로를 따라감)·
 // 그린 기준 원호·내 위치→그린 거리를 그림. OSM에 홀 선(golf=hole)이 있는 골프장은 자동, 없으면 직접 찍기.
-const COURSES = [
-  { name: '시그너스CC', center: [37.1750, 127.7355], data: {"name":"시그너스CC","nines":[{"label":"실크(Silk)","pars":[5,4,4,3,5,4,3,4,4],"tees":{"블루":[490,380,325,165,500,360,140,345,405],"화이트":[510,360,305,145,480,340,120,325,385],"레드":[441,283,276,122,414,291,102,302,346]}},{"label":"라미(Ramie)","pars":[4,5,3,4,4,3,5,4,4],"tees":{"블루":[355,510,200,390,425,160,535,430,375],"화이트":[335,490,165,370,405,145,515,410,355],"레드":[316,449,135,340,334,122,463,293,311]}},{"label":"코튼(Cotton)","pars":[4,5,4,5,3,4,4,3,4],"tees":{"블루":[345,450,365,470,170,300,375,170,315],"화이트":[325,450,336,433,158,272,375,146,294],"레드":[282,427,298,409,143,267,332,119,250]}}]}, osm: {"코튼(Cotton)": {"1": {"path": [[37.173234, 127.740274], [37.172293, 127.739926], [37.171488, 127.73986], [37.170991, 127.740544]], "pin": [37.170991, 127.740544]}, "2": {"path": [[37.171044, 127.739446], [37.17151, 127.738204], [37.172122, 127.73753], [37.172656, 127.737149], [37.173189, 127.737311], [37.173615, 127.738105]], "pin": [37.173615, 127.738105]}, "3": {"path": [[37.172841, 127.736265], [37.17183, 127.736563], [37.17138, 127.737122], [37.170848, 127.737922], [37.170633, 127.738584]], "pin": [37.170633, 127.738584]}, "4": {"path": [[37.170315, 127.738585], [37.170287, 127.738062], [37.170297, 127.73675], [37.17037, 127.73448], [37.170216, 127.733823]], "pin": [37.170216, 127.733823]}, "5": {"path": [[37.170704, 127.73254], [37.171287, 127.731333]], "pin": [37.171287, 127.731333]}, "6": {"path": [[37.170934, 127.730608], [37.170537, 127.731885], [37.169795, 127.733408]], "pin": [37.169795, 127.733408]}, "7": {"path": [[37.169511, 127.733867], [37.169708, 127.735632], [37.169689, 127.736723], [37.16971, 127.737949]], "pin": [37.16971, 127.737949]}, "8": {"path": [[37.170444, 127.739315], [37.170433, 127.740367], [37.170167, 127.740902]], "pin": [37.170167, 127.740902]}, "9": {"path": [[37.170794, 127.741345], [37.171866, 127.740866], [37.172549, 127.740785], [37.173155, 127.740894]], "pin": [37.173155, 127.740894]}}, "라미(Ramie)": {"1": {"path": [[37.175282, 127.740535], [37.175294, 127.738954], [37.175065, 127.737475], [37.17486, 127.736835]], "pin": [37.17486, 127.736835]}, "2": {"path": [[37.175182, 127.735908], [37.175024, 127.733518], [37.175792, 127.730553]], "pin": [37.175792, 127.730553]}, "3": {"path": [[37.175845, 127.729994], [37.177298, 127.730208]], "pin": [37.177298, 127.730208]}, "4": {"path": [[37.177503, 127.729649], [37.17476, 127.728987]], "pin": [37.17476, 127.728987]}, "5": {"path": [[37.17469, 127.730112], [37.174514, 127.73151], [37.174039, 127.732179], [37.172808, 127.732289]], "pin": [37.172808, 127.732289]}, "6": {"path": [[37.17335, 127.732793], [37.174344, 127.733801]], "pin": [37.174344, 127.733801]}, "7": {"path": [[37.174407, 127.734755], [37.173366, 127.73407], [37.172815, 127.733942], [37.171932, 127.734505], [37.170917, 127.73601]], "pin": [37.170917, 127.73601]}, "8": {"path": [[37.171269, 127.736238], [37.171886, 127.735315], [37.172727, 127.735028], [37.173333, 127.735138], [37.174053, 127.736169]], "pin": [37.174053, 127.736169]}, "9": {"path": [[37.173628, 127.736571], [37.174285, 127.737624], [37.174689, 127.738901], [37.174631, 127.740178]], "pin": [37.174631, 127.740178]}}, "실크(Silk)": {"1": {"path": [[37.176204, 127.741699], [37.177266, 127.741081], [37.178207, 127.740702], [37.179122, 127.740044], [37.179864, 127.739509]], "pin": [37.179864, 127.739509]}, "2": {"path": [[37.180046, 127.738906], [37.178891, 127.738377], [37.177905, 127.736872]], "pin": [37.177905, 127.736872]}, "3": {"path": [[37.177541, 127.736353], [37.177021, 127.734698], [37.176804, 127.733125]], "pin": [37.176804, 127.733125]}, "4": {"path": [[37.176937, 127.732507], [37.177927, 127.731609]], "pin": [37.177927, 127.731609]}, "5": {"path": [[37.17799, 127.730778], [37.17695, 127.731498], [37.176328, 127.73215], [37.175955, 127.733688], [37.175933, 127.73487]], "pin": [37.175933, 127.73487]}, "6": {"path": [[37.176432, 127.735563], [37.177376, 127.737478], [37.177988, 127.738675]], "pin": [37.177988, 127.738675]}, "7": {"path": [[37.178789, 127.739296], [37.177692, 127.739905]], "pin": [37.177692, 127.739905]}, "8": {"path": [[37.177139, 127.739038], [37.175895, 127.735743]], "pin": [37.175895, 127.735743]}, "9": {"path": [[37.175522, 127.736602], [37.176055, 127.738581], [37.176033, 127.739501], [37.175779, 127.74061]], "pin": [37.175779, 127.74061]}}} },
-  { name: '레이크우드CC', center: [37.7806, 127.0880], data: {"name":"레이크우드CC","nines":[{"label":"물길","pars":[4,4,3,5,4,3,5,4,4],"tees":{"레드":[288,283,122,447,300,118,431,308,284],"골드":[302,299,147,486,357,135,455,354,334],"실버":[null,null,null,503,null,null,null,null,365],"화이트":[311,313,165,523,380,158,476,368,379],"블루":[332,325,185,537,392,175,495,384,400]}},{"label":"꽃길","pars":[4,4,3,4,4,5,3,5,4],"tees":{"레드":[318,289,90,317,317,428,137,437,290],"골드":[335,306,105,340,359,447,159,488,306],"실버":[null,null,119,null,null,467,174,507,null],"화이트":[350,323,128,351,378,490,188,520,319],"블루":[365,343,145,363,393,506,201,533,332]}},{"label":"산길","pars":[5,3,4,4,3,4,5,4,4],"tees":{"레드":[430,80,259,277,121,233,360,276,281],"골드":[480,94,315,305,144,294,442,333,319],"화이트":[510,117,329,332,166,315,472,367,345],"블루":[524,133,350,358,182,334,485,385,364]}},{"label":"숲길","pars":[4,5,3,4,4,5,4,3,4],"tees":{"레드":[268,342,95,273,273,394,216,104,307],"골드":[291,393,115,321,304,431,271,133,336],"실버":[null,455,null,378,385,468,327,null,354],"화이트":[377,482,141,400,404,494,351,155,381],"블루":[390,501,160,420,424,513,370,175,402]}}]}, osm: null }
-];
-const TEE_DOT = { 블랙: '#222', 골드: '#c9a227', 블루: '#2f6fe0', 화이트: '#ffffff', 실버: '#b8bec6', 옐로: '#f2c500', 그린: '#3cb45a', 레드: '#e0342f' };
+// 골프장 = 내장 DB(courses-kr.js)에서 티별 거리가 있는 곳 전부. 위치·OSM 홀 선은 yardage-osm.js(tools/build-yardage-osm.js 생성)
+const BUILTIN = {
+  '시그너스CC': { center: [37.1750, 127.7355], osm: {"코튼(Cotton)": {"1": {"path": [[37.173234, 127.740274], [37.172293, 127.739926], [37.171488, 127.73986], [37.170991, 127.740544]], "pin": [37.170991, 127.740544]}, "2": {"path": [[37.171044, 127.739446], [37.17151, 127.738204], [37.172122, 127.73753], [37.172656, 127.737149], [37.173189, 127.737311], [37.173615, 127.738105]], "pin": [37.173615, 127.738105]}, "3": {"path": [[37.172841, 127.736265], [37.17183, 127.736563], [37.17138, 127.737122], [37.170848, 127.737922], [37.170633, 127.738584]], "pin": [37.170633, 127.738584]}, "4": {"path": [[37.170315, 127.738585], [37.170287, 127.738062], [37.170297, 127.73675], [37.17037, 127.73448], [37.170216, 127.733823]], "pin": [37.170216, 127.733823]}, "5": {"path": [[37.170704, 127.73254], [37.171287, 127.731333]], "pin": [37.171287, 127.731333]}, "6": {"path": [[37.170934, 127.730608], [37.170537, 127.731885], [37.169795, 127.733408]], "pin": [37.169795, 127.733408]}, "7": {"path": [[37.169511, 127.733867], [37.169708, 127.735632], [37.169689, 127.736723], [37.16971, 127.737949]], "pin": [37.16971, 127.737949]}, "8": {"path": [[37.170444, 127.739315], [37.170433, 127.740367], [37.170167, 127.740902]], "pin": [37.170167, 127.740902]}, "9": {"path": [[37.170794, 127.741345], [37.171866, 127.740866], [37.172549, 127.740785], [37.173155, 127.740894]], "pin": [37.173155, 127.740894]}}, "라미(Ramie)": {"1": {"path": [[37.175282, 127.740535], [37.175294, 127.738954], [37.175065, 127.737475], [37.17486, 127.736835]], "pin": [37.17486, 127.736835]}, "2": {"path": [[37.175182, 127.735908], [37.175024, 127.733518], [37.175792, 127.730553]], "pin": [37.175792, 127.730553]}, "3": {"path": [[37.175845, 127.729994], [37.177298, 127.730208]], "pin": [37.177298, 127.730208]}, "4": {"path": [[37.177503, 127.729649], [37.17476, 127.728987]], "pin": [37.17476, 127.728987]}, "5": {"path": [[37.17469, 127.730112], [37.174514, 127.73151], [37.174039, 127.732179], [37.172808, 127.732289]], "pin": [37.172808, 127.732289]}, "6": {"path": [[37.17335, 127.732793], [37.174344, 127.733801]], "pin": [37.174344, 127.733801]}, "7": {"path": [[37.174407, 127.734755], [37.173366, 127.73407], [37.172815, 127.733942], [37.171932, 127.734505], [37.170917, 127.73601]], "pin": [37.170917, 127.73601]}, "8": {"path": [[37.171269, 127.736238], [37.171886, 127.735315], [37.172727, 127.735028], [37.173333, 127.735138], [37.174053, 127.736169]], "pin": [37.174053, 127.736169]}, "9": {"path": [[37.173628, 127.736571], [37.174285, 127.737624], [37.174689, 127.738901], [37.174631, 127.740178]], "pin": [37.174631, 127.740178]}}, "실크(Silk)": {"1": {"path": [[37.176204, 127.741699], [37.177266, 127.741081], [37.178207, 127.740702], [37.179122, 127.740044], [37.179864, 127.739509]], "pin": [37.179864, 127.739509]}, "2": {"path": [[37.180046, 127.738906], [37.178891, 127.738377], [37.177905, 127.736872]], "pin": [37.177905, 127.736872]}, "3": {"path": [[37.177541, 127.736353], [37.177021, 127.734698], [37.176804, 127.733125]], "pin": [37.176804, 127.733125]}, "4": {"path": [[37.176937, 127.732507], [37.177927, 127.731609]], "pin": [37.177927, 127.731609]}, "5": {"path": [[37.17799, 127.730778], [37.17695, 127.731498], [37.176328, 127.73215], [37.175955, 127.733688], [37.175933, 127.73487]], "pin": [37.175933, 127.73487]}, "6": {"path": [[37.176432, 127.735563], [37.177376, 127.737478], [37.177988, 127.738675]], "pin": [37.177988, 127.738675]}, "7": {"path": [[37.178789, 127.739296], [37.177692, 127.739905]], "pin": [37.177692, 127.739905]}, "8": {"path": [[37.177139, 127.739038], [37.175895, 127.735743]], "pin": [37.175895, 127.735743]}, "9": {"path": [[37.175522, 127.736602], [37.176055, 127.738581], [37.176033, 127.739501], [37.175779, 127.74061]], "pin": [37.175779, 127.74061]}}} },
+  '레이크우드CC': { center: [37.7806, 127.0880], osm: null }
+};
+const GEO = Object.assign({}, BUILTIN, window.YARDAGE_OSM || {});
+for (const k of Object.keys(BUILTIN)) if (GEO[k] && !GEO[k].osm) GEO[k] = { center: GEO[k].center, osm: BUILTIN[k].osm };
+// 골프장 DB: 로컬 개발은 courses-kr.js, 배포본은 본 앱(같은 주소)에 로그인할 때 휴대폰에 저장된 서버 DB 캐시를 읽음
+let DB_LIST = window.GOLF_PAR_DB;
+if (!DB_LIST) { try { DB_LIST = JSON.parse(localStorage.getItem('golfRangefinder.db')).list; } catch (e) { DB_LIST = null; } }
+const COURSES = (DB_LIST || []).filter(c => c.nines.some(n => n.tees))
+  .map(c => ({ name: c.name, region: c.region || '', center: GEO[c.name] ? GEO[c.name].center : null, data: c, osm: GEO[c.name] ? GEO[c.name].osm : null }))
+  .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+const TEE_DOT = { 블랙: '#222', 골드: '#c9a227', 블루: '#2f6fe0', 화이트: '#ffffff', 실버: '#b8bec6', 옐로: '#f2c500', 그린: '#3cb45a', 레드: '#e0342f',
+  스카이블루: '#5ec8f2', 핑크: '#ff7eb6', 브라운: '#8b5a2b', 챔피언: '#222', 챔피언십: '#222', 챔프: '#222', 프로: '#222', 토너먼트: '#222', 아너스: '#c9a227',
+  백: '#2f6fe0', 레귤러: '#ffffff', 기준: '#ffffff', 시니어: '#c9a227', 프론트: '#e0342f', 포워드: '#e0342f', 레이디: '#e0342f', 칠드런: '#3cb45a' };
 const KEY = 'yd-demo-v2';
+if (!COURSES.length) {
+  document.body.innerHTML = '<div style="padding:24px;line-height:1.6">골프장 자료가 없습니다.<br>먼저 <a style="color:#5bd17d" href="./">⛳ 골프 거리측정 앱</a>에 로그인한 뒤 이 페이지를 다시 여세요.<br><span class="mut">(티별 홀 거리가 들어 있는 골프장만 표시됩니다)</span></div>';
+  throw new Error('no courses');
+}
 let store = {};
 try { store = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { store = {}; }
 const saveStore = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* 저장 불가 환경 */ } };
-let ci = 0, nineI = 0, hole = 0, mode = 'green', me = null;
-try { ci = Math.max(0, COURSES.findIndex(c => c.name === localStorage.getItem(KEY + '-course'))); } catch (e) { ci = 0; }
+let ci = 0, nineI = 0, hole = 0, mode = 'green', me = null, chosen = false;
+try { const k = COURSES.findIndex(c => c.name === localStorage.getItem(KEY + '-course')); if (k >= 0) { ci = k; chosen = true; } } catch (e) { ci = 0; }
+const KR = [36.5, 127.8];
 const $ = id => document.getElementById(id);
 const C = () => COURSES[ci], N = () => C().data.nines[nineI];
 
-const map = L.map('map', { zoomControl: false, attributionControl: false }).setView(C().center, 16);
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView(C().center || KR, C().center ? 16 : 7);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19 }).addTo(map);
 const layer = L.layerGroup().addTo(map);
 
@@ -89,16 +107,23 @@ function route() {
   const bends = h.bend ? [h.bend] : ob;
   return { green, tee, path: green && tee ? [green, ...bends, tee] : null, manual: !!(h.green || h.tee || h.bend), osm: !!o };
 }
-const dot = t => `<i style="display:inline-block;width:.75em;height:.75em;border-radius:50%;border:1px solid #888;background:${TEE_DOT[t] || '#aaa'}"></i>`;
+const teeColor = t => TEE_DOT[t] || TEE_DOT[String(t).split(/[\s(]/)[0]] || '#aaa';
+const dot = t => `<i style="display:inline-block;width:.75em;height:.75em;border-radius:50%;border:1px solid #888;background:${teeColor(t)}"></i>`;
+let side = null;   // 좌/우 그린이 따로 있는 골프장(티 이름 「블루 좌」 등)은 한쪽만 표시
+const sideOf = t => (String(t).match(/\s(좌|우)$/) || [])[1] || null;
 
 function render() {
   const n = N(), r = route();
   $('holeTitle').textContent = `${hole + 1}번홀 · Par ${n.pars[hole]}`;
-  $('src').textContent = r.manual ? '(직접 찍은 위치)' : r.osm ? '(OSM 지도 자동)' : '';
+  $('src').textContent = r.manual ? '(직접 찍은 위치)' : r.osm ? '(OSM 지도 자동)' : C().osm ? '' : '(지도 자료 없음 — 직접 찍기)';
   document.querySelectorAll('#holes button').forEach((b, i) => b.classList.toggle('on', i === hole));
   document.querySelectorAll('.mode [data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
   layer.clearLayers();
-  const tees = Object.entries(n.tees || {}).filter(([, a]) => a[hole] != null).sort((a, b) => b[1][hole] - a[1][hole]);
+  let tees = Object.entries(n.tees || {}).filter(([, a]) => a[hole] != null).sort((a, b) => b[1][hole] - a[1][hole]);
+  const sides = [...new Set(tees.map(([t]) => sideOf(t)).filter(Boolean))];
+  if (sides.length > 1) { if (!sides.includes(side)) side = sides[0]; tees = tees.filter(([t]) => sideOf(t) === side); }
+  $('sides').innerHTML = sides.length > 1 ? sides.map(x => `<button data-side="${x}" class="${x === side ? 'on' : ''}">${x} 그린</button>`).join('') : '';
+  $('sides').querySelectorAll('button').forEach(b => { b.onclick = () => { side = b.dataset.side; render(); }; });
   let html = tees.map(([t, a]) => `<span style="white-space:nowrap">${dot(t)} ${t} <b>${a[hole]}m</b></span>`).join(' · ');
   if (r.green) {
     L.marker(r.green, { icon: L.divIcon({ html: '⛳', className: '', iconSize: [24, 24], iconAnchor: [6, 22] }) }).addTo(layer);
@@ -111,7 +136,7 @@ function render() {
       L.tooltip({ permanent: true, direction: 'right', className: 'arc', offset: [4, 0] }).setLatLng(pointFromGreen(p, d)).setContent(String(d)).addTo(layer);
     }
     tees.forEach(([t, a], i) => {
-      L.circleMarker(pointFromGreen(p, a[hole]), { radius: 7, color: '#000', weight: 1.5, fillColor: TEE_DOT[t] || '#aaa', fillOpacity: 1 }).addTo(layer)
+      L.circleMarker(pointFromGreen(p, a[hole]), { radius: 7, color: '#000', weight: 1.5, fillColor: teeColor(t), fillOpacity: 1 }).addTo(layer)
         .bindTooltip(`${t} ${a[hole]}m`, { permanent: true, direction: i % 2 ? 'left' : 'right', className: 'tl', offset: [i % 2 ? -8 : 8, (Math.floor(i / 2) - (tees.length - 1) / 4) * 18] });
     });
     const back = tees[0];
@@ -134,7 +159,8 @@ function fit() {
   const r = route(), pts = r.path || [r.green].filter(Boolean);
   if (pts.length >= 2) map.fitBounds(pts, { paddingTopLeft: [30, 30], paddingBottomRight: [30, 230] });
   else if (pts.length) map.setView(pts[0], 18);
-  else map.setView(C().center, 16);
+  else if (C().center) map.setView(C().center, 16);
+  else if (me) map.setView(me, 17);
 }
 function setPoint(p) {
   const h = hd(); h[mode] = p; saveStore();
@@ -147,12 +173,43 @@ $('here').onclick = () => { if (me) { setPoint(me.slice()); map.setView(me, 18);
 $('clr').onclick = () => { if (confirm('이 홀에 직접 찍은 위치를 지울까요?')) { store[hk()] = {}; saveStore(); mode = 'green'; render(); fit(); } };
 const pickHole = i => { hole = i; mode = route().green ? 'tee' : 'green'; render(); fit(); };
 function fillNines() { $('nine').innerHTML = ''; C().data.nines.forEach((n, i) => $('nine').add(new Option(n.label + ' 코스', i))); }
-COURSES.forEach((c, i) => $('course').add(new Option(c.name, i)));
-$('course').value = ci;
-$('course').onchange = e => { ci = +e.target.value; try { localStorage.setItem(KEY + '-course', C().name); } catch (x) { /* 무시 */ } nineI = 0; fillNines(); pickHole(0); };
+function fillCourses() {
+  const q = $('q').value.replace(/\s/g, '').toLowerCase();
+  const sel = $('course'); sel.innerHTML = '';
+  const hits = matches(q);
+  hits.forEach(i => sel.add(new Option(COURSES[i].name + (COURSES[i].osm ? ' ✓' : ''), i)));
+  if (!hits.includes(ci)) sel.add(new Option(C().name + (C().osm ? ' ✓' : ''), ci));
+  sel.value = ci;
+}
+function matches(q) {
+  const out = [];
+  COURSES.forEach((c, i) => {
+    const hay = (c.name + (c.data.aliases || []).join('') + c.region).replace(/\s/g, '').toLowerCase();
+    if (!q || hay.includes(q)) out.push(i);
+  });
+  return out;
+}
+function chooseCourse(i, remember) {
+  ci = i; nineI = 0;
+  if (remember) { chosen = true; try { localStorage.setItem(KEY + '-course', C().name); } catch (x) { /* 무시 */ } }
+  fillCourses(); fillNines(); pickHole(0);
+}
+$('q').oninput = () => {
+  const hits = matches($('q').value.replace(/\s/g, '').toLowerCase());
+  if ($('q').value && hits.length && !hits.includes(ci)) chooseCourse(hits[0], true); else fillCourses();
+};
+$('course').onchange = e => chooseCourse(+e.target.value, true);
 $('nine').onchange = e => { nineI = +e.target.value; pickHole(0); };
 for (let i = 0; i < 9; i++) { const b = document.createElement('button'); b.textContent = i + 1; b.onclick = () => pickHole(i); $('holes').appendChild(b); }
-if (navigator.geolocation) navigator.geolocation.watchPosition(pos => { me = [pos.coords.latitude, pos.coords.longitude]; render(); }, () => {}, { enableHighAccuracy: true, maximumAge: 2000 });
-fillNines(); pickHole(0);
+if (navigator.geolocation) navigator.geolocation.watchPosition(pos => {
+  const first = !me; me = [pos.coords.latitude, pos.coords.longitude];
+  if (first && !chosen) {   // 처음 위치를 받으면 3km 안의 골프장을 자동으로 고름
+    let best = -1, bd = 3000;
+    COURSES.forEach((c, i) => { if (c.center) { const d = dist(me, c.center); if (d < bd) { bd = d; best = i; } } });
+    if (best >= 0 && best !== ci) { chooseCourse(best, false); return; }
+  }
+  render(); if (first && !C().center && !route().green) fit();
+}, () => {}, { enableHighAccuracy: true, maximumAge: 2000 });
+fillCourses(); fillNines(); pickHole(0);
 </script>
 </body></html>
